@@ -17,15 +17,16 @@ import pandas as pd
 RESET_PARAMETERS = True
 BATCH_SIZE = 128
 VAL_BATCH_SIZE = 256
-LEARNING_RATE = 1e-1
-LEARNING_RATE_ANNEAL_RATE = 100     # Number of epochs after which learning rate is annealed by 1/e
-STEPPED_ANNEAL = True # Whether or not the learning rate is annealed by 1/e all at once, or slowly over time
+LEARNING_RATE = 7e-2
+LEARNING_RATE_ANNEAL_RATE = 50     # Number of epochs after which learning rate is annealed by
+LEARNING_RATE_ANNEAL_TYPE = '1/x'
+STEPPED_ANNEAL = True # Whether or not the learning rate is annealed all at once, or slowly over time
 REGULARIZATION_TYPE = 'L2'  # Regularization type is already determined in ResNet.py
 REGULARIZATION_PARAMETER = 1e-2
-INPUT_NOISE_MAGNITUDE = np.sqrt(0.05)
-WEIGHT_NOISE_MAGNITUDE = 0
-KEEP_PROB = {1: .8, 2: 0.5, 3: 0.7}
-SAVE_PATH = './checkpoints/{0}/DigitRecognizer_{0}'.format(0)
+INPUT_NOISE_MAGNITUDE = np.sqrt(0.1)
+WEIGHT_NOISE_MAGNITUDE = np.sqrt(0.1)
+KEEP_PROB = {1: .5, 2: 0.6, 3: 0.7}
+SAVE_PATH = './checkpoints/{0}/DigitRecognizer_{0}'.format(1)
 MAX_EPOCHS = int(1e10)
 DATA_PATH = '../Datasets/MNIST/train.csv'
 LOG_EVERY_N_STEPS = 100
@@ -37,8 +38,8 @@ data_raw = pd.read_csv(DATA_PATH)
 
 # Extract data from dict
 print('Processing data...')
-X = np.reshape(np.array(data_raw.iloc[1:,1:], dtype=int), [-1,28,28,1])
-Y = np.array(data_raw.iloc[1:,0], dtype=int)
+X = np.reshape(np.array(data_raw.iloc[:,1:], dtype=int), [-1,28,28,1])
+Y = np.array(data_raw.iloc[:,0], dtype=int)
 del data_raw
 
 # Visualize just to make sure it looks right
@@ -69,12 +70,13 @@ with open(SAVE_PATH+'.log', 'w+') as fo:
     fo.write('Hyperparameters:\n')
     fo.write('Batch size: {}\n'.format(BATCH_SIZE))
     fo.write('Learning rate: {}\n'.format(LEARNING_RATE))
-    fo.write('Learning rate annealed by 1/e every N epochs: {}\n'.format(LEARNING_RATE_ANNEAL_RATE))
-    fo.write('Stepped anneal: {}'.format(STEPPED_ANNEAL))
+    fo.write('Learning rate annealed every N epochs: {}\n'.format(LEARNING_RATE_ANNEAL_RATE))
+    fo.write('Learning rate anneal type: {}\n'.format(LEARNING_RATE_ANNEAL_TYPE))
+    fo.write('Stepped anneal: {}\n'.format(STEPPED_ANNEAL))
     fo.write('Regularization type: {}\n'.format(REGULARIZATION_TYPE))
     fo.write('Regularization parameter: {}\n'.format(REGULARIZATION_PARAMETER))
-    fo.write('Input noise magnitude: {}\n'.format(INPUT_NOISE_MAGNITUDE))
-    fo.write('Weight noise magnitude: {}\n'.format(WEIGHT_NOISE_MAGNITUDE))
+    fo.write('Input noise variance: {:.2f}\n'.format(INPUT_NOISE_MAGNITUDE**2))
+    fo.write('Weight noise variance: {:.2f}\n'.format(WEIGHT_NOISE_MAGNITUDE**2))
     for n in range(1,len(KEEP_PROB)+1):
         fo.write('Dropout keep prob. group {}: {:.2f}\n'.format(n, KEEP_PROB[n]))
     fo.write('Logging frequency: {} global steps\n'.format(LOG_EVERY_N_STEPS))
@@ -114,7 +116,7 @@ with G.as_default():
     tf.add_to_collection('placeholders', input_noise_magnitude)
     X_train = tf.gather(X_train, train_idx)
     X_train = tf.pad(X_train, paddings=[[0,0],[3,3],[3,3],[0,0]])
-    X_train = u.random_crop(X_train, [32,32,3])
+    X_train = u.random_crop(X_train, [28,28,1])
     X_train += input_noise_magnitude*tf.random_normal(tf.shape(X_train), dtype=tf.float32)
     Y_train = tf.gather(Y_train, train_idx)
     ge.reroute_ts([X_train, Y_train], [X, labels])
@@ -137,6 +139,7 @@ with G.as_default():
         
         # Initialize control flow variables and logs
         max_val_accuracy = -1
+        min_val_loss = np.inf
         global_steps = 0
         with open(SAVE_PATH+'_val_accuracy.log', 'w+') as fo:
                 fo.write('')
@@ -153,9 +156,15 @@ with G.as_default():
         print('Beginning training...')
         for epoch in range(MAX_EPOCHS):
             if STEPPED_ANNEAL:
-                lr = LEARNING_RATE*np.exp(-(epoch//LEARNING_RATE_ANNEAL_RATE))
+                x = (epoch//LEARNING_RATE_ANNEAL_RATE)
             else:
-                lr = LEARNING_RATE*np.exp(-(epoch/LEARNING_RATE_ANNEAL_RATE))
+                x = (epoch/LEARNING_RATE_ANNEAL_RATE)
+            if LEARNING_RATE_ANNEAL_TYPE in ['exponential','exp','1/e','exp(-x)']:
+                lr = LEARNING_RATE*np.exp(-x)
+            elif LEARNING_RATE_ANNEAL_TYPE in ['inverse','1/x']:
+                lr = LEARNING_RATE/(1+x)
+            elif LEARNING_RATE_ANNEAL_TYPE in ['none','None',None]:
+                lr = LEARNING_RATE
             # Iterate over batches
             for b in range(m_train//BATCH_SIZE+1):
                 
@@ -187,8 +196,9 @@ with G.as_default():
                         fo.write(str(lr)+'\n')
                     
                     # Save if improvement
-                    if val_accuracy > max_val_accuracy:
+                    if (val_accuracy > max_val_accuracy) or ((val_accuracy >= max_val_accuracy) and (val_loss < min_val_loss)):
                         max_val_accuracy = val_accuracy
+                        min_val_loss = val_loss
                         print('Saving variables...')
                         saver.save(sess, SAVE_PATH, write_meta_graph=False)
                     
