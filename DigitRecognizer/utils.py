@@ -37,6 +37,30 @@ def input_choice(query_str, choices=['y','n','']):
             print('Invalid choice!\n')
     return x
 
+def visualize_dataset(X, Y):
+    ''' Iterates through the dataset (assuming axis 0 is batch dimension) and displays images. '''
+    import matplotlib.pyplot as plt
+    dims = X.shape
+    m = dims[0]
+    assert m == len(Y)
+    plt.figure('data examples')
+    for b, lbl in enumerate(Y):
+        print('Image {}/{}'.format(b,m))
+        if len(dims) == 3:
+            img = X[b,:,:]
+        elif len(dims) == 4:
+            if dims[-1] == 1:
+                img = X[b,:,:,0]
+            else:
+                img = X[b,:,:,:]
+        else:
+            raise Exception('Improper numer of dimensions. Shape of input is {}'.format(dims))
+        plt.clf()
+        plt.imshow(img)
+        plt.title('Class: {}'.format(lbl))
+        plt.draw()
+        plt.pause(1)
+
 def random_crop(tensor, size):
     '''
     Does a random crop on a batch of images, assuming NHWC format.
@@ -141,4 +165,4 @@ def plot_metrics(data_path, plot_path=None):
     plt.savefig(plot_path+'_error.png')
 
 if __name__ == '__main__':
-    plot_metrics('./checkpoints/{0}/CIFAR10_{0}'.format(10))
+    plot_metrics('./checkpoints/{0}/DigitRecognizer_{0}'.format(0))

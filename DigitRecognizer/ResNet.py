@@ -419,7 +419,7 @@ class ResNet(object):
                 saver.save(sess, self.save_path)
 
 
-a = ResNet(tf.float32, shape=[None,32,32,3], save_path='./checkpoints/{0}/CIFAR10_{0}'.format(10), use_bn=True) # 32x32x3
+a = ResNet(tf.float32, shape=[None,28,28,1], save_path='./checkpoints/{0}/DigitRecognizer_{0}'.format(0), use_bn=True) # 28x28x1
 a.add_inception_block([3,7,11], [32,48,16], 1, shield_channels=False) # 32x32x96
 a.dropout(group=1)
 a.start_skip_connection()
@@ -468,7 +468,7 @@ with a.get_graph().as_default():
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         tic = time.time()
-        feed_dict = {**{X:np.random.randn(100,32,32,3), a.labels:np.random.randint(10, size=100), a.learning_rate:1e-9, reg_param:1e-9}, **{a.keep_prob[n]:1 for n in range(1,len(a.keep_prob)+1)}}
+        feed_dict = {**{X:np.random.randn(100,28,28,1), a.labels:np.random.randint(10, size=100), a.learning_rate:1e-9, reg_param:1e-9}, **{a.keep_prob[n]:1 for n in range(1,len(a.keep_prob)+1)}}
         y, L, _ = sess.run([Y, loss, a.training_op], feed_dict=feed_dict)
         toc = time.time()
         print(y.shape)

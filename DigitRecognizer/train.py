@@ -11,6 +11,7 @@ import tensorflow.contrib.graph_editor as ge
 import numpy as np
 import utils as u
 import time
+import pandas as pd
 
 # Define hyperparameters, file paths, and control flow variables
 RESET_PARAMETERS = True
@@ -24,34 +25,29 @@ REGULARIZATION_PARAMETER = 1e-2
 INPUT_NOISE_MAGNITUDE = np.sqrt(0.05)
 WEIGHT_NOISE_MAGNITUDE = 0
 KEEP_PROB = {1: .8, 2: 0.5, 3: 0.7}
-SAVE_PATH = './checkpoints/{0}/CIFAR10_{0}'.format(10)
+SAVE_PATH = './checkpoints/{0}/DigitRecognizer_{0}'.format(0)
 MAX_EPOCHS = int(1e10)
-CIFAR_DATA_PATH = './CIFAR10_data/cifar-10-batches-py/'
+DATA_PATH = '../Datasets/MNIST/train.csv'
 LOG_EVERY_N_STEPS = 100
 GPU_MEM_FRACTION = 0.6
 
-# Load image data. Returns a dict that contains 'data' (10000x3072 numpy array of uint8's) and 'labels' (list of 10000 numbers between 0-9 denoting the class). There are 5 training data files, one test file, and one 'meta' file containing a list of human-decipherable names to the classes.
+# Load image data. Returns a pandas Dataframe object
 print('Loading data...')
-data = []
-for n in range(1,5+1):
-    data.append(u.unpickle(CIFAR_DATA_PATH+'data_batch_'+str(n)))
-data.append(u.unpickle(CIFAR_DATA_PATH+'test_batch'))
-data.append(u.unpickle(CIFAR_DATA_PATH+'batches.meta'))
+data_raw = pd.read_csv(DATA_PATH)
 
 # Extract data from dict
 print('Processing data...')
-X = np.transpose(np.reshape(np.concatenate([data[n][b'data'] for n in range(5)], axis=0), [-1,32,32,3], order='F'), [0,2,1,3]) # Data is saved in a weird format, so need to do fortran style reshaping to get color channels right, then transpose x,y axes to get upright image
-Y = np.concatenate([data[n][b'labels'] for n in range(5)], axis=0)
-#X_test = data[5][b'data'].reshape([-1,32,32,3])
-#Y_test = np.array(data[5][b'labels'])
-#label_names = data[6]
-del data
+X = np.reshape(np.array(data_raw.iloc[1:,1:], dtype=int), [-1,28,28,1])
+Y = np.array(data_raw.iloc[1:,0], dtype=int)
+del data_raw
+
+# Visualize just to make sure it looks right
+#u.visualize_dataset(X,Y)
 
 # Preprocess data by normalizing to zero mean and unit variance
 X_mean = np.mean(X)
 X_std = np.std(X)
 X = (X - X_mean)/X_std
-#X_test = (X_test - X_mean)/X_std
 
 # Shuffle data and split into training and validation sets
 RANDOM_SEED = int(time.time())
@@ -61,7 +57,6 @@ np.random.seed(RANDOM_SEED)
 Y_train = np.random.permutation(Y)
 del X, Y
 m_train = len(Y_train) - VAL_BATCH_SIZE
-#m_test = len(Y_test)
 
 # Log some info about the data for future use
 with open(SAVE_PATH+'.log', 'w+') as fo:
@@ -69,7 +64,6 @@ with open(SAVE_PATH+'.log', 'w+') as fo:
     fo.write('Dataset metrics:\n')
     fo.write('Training data shape: {}\n'.format(X_train.shape))
     fo.write('Validation set size: {}\n'.format(VAL_BATCH_SIZE))
-#    fo.write('Test data size: {}\n'.format(X_test.shape[0]))
     fo.write('X_mean: {}\n'.format(X_mean))
     fo.write('X_std: {}\n\n'.format(X_std))
     fo.write('Hyperparameters:\n')
