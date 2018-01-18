@@ -419,11 +419,11 @@ class ResNet(object):
                 saver.save(sess, self.save_path)
 
 
-a = ResNet(tf.float32, shape=[None,28,28,1], save_path='./checkpoints/{0}/DigitRecognizer_{0}'.format(0), use_bn=True) # 28x28x1
+a = ResNet(tf.float32, shape=[None,28,28,1], save_path='./checkpoints/{0}/DigitRecognizer_{0}'.format(1), use_bn=True) # 28x28x1
 a.add_inception_block([3,7,11], [32,48,16], 1, shield_channels=False) # 32x32x96
 a.dropout(group=1)
 a.start_skip_connection()
-a.add_inception_block([1,3,5], [32,48,16], 1)
+a.add_inception_block([3,5,7], [32,48,16], 1)
 a.dropout(group=1)
 a.end_skip_connection()
 a.add_inception_block([3,5], [96,48], 2, [2,3], [24,24]) # 16x16x192
