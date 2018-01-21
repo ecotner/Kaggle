@@ -1,0 +1,149 @@
+Inception ResNet:
+Number of parameters: 1437568 weights + 10 biases = 1437578 parameters
+
+Network architecture:
+
+Layer 0 (input): shape=[None, 28, 28, 1]
+=============== Start Inception block 1 ===============
+Layer 1: 3x3x32 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 1: 5x5x48 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 1: 7x7x32 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 1: 11x11x16 convolution, stride=1, relu activation
+**************** End Inception block 1 ****************
+Dropout, group 1
+>>> Start skip connection
+=============== Start Inception block 2 ===============
+Layer 2: 1x1x16 convolution, stride=1, relu activation
+Layer 2: 3x3x32 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 2: 1x1x32 convolution, stride=1, relu activation
+Layer 2: 5x5x64 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 2: 1x1x16 convolution, stride=1, relu activation
+Layer 2: 7x7x32 convolution, stride=1, relu activation
+**************** End Inception block 2 ****************
+Dropout, group 1
+=============== Start Inception block 3 ===============
+Layer 3: 1x1x16 convolution, stride=1, relu activation
+Layer 3: 3x3x32 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 3: 1x1x32 convolution, stride=1, relu activation
+Layer 3: 5x5x64 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 3: 1x1x16 convolution, stride=1, relu activation
+Layer 3: 7x7x32 convolution, stride=1, relu activation
+**************** End Inception block 3 ****************
+Dropout, group 1
+<<< End skip connection
+=============== Start Inception block 4 ===============
+Layer 4: 1x1x48 convolution, stride=1, relu activation
+Layer 4: 3x3x96 convolution, stride=2, relu activation
+------------------------------------------------------
+Layer 4: 1x1x24 convolution, stride=1, relu activation
+Layer 4: 5x5x48 convolution, stride=2, relu activation
+------------------------------------------------------
+Layer 4: 2x2 max pool, stride=2, none activation
+Layer 4: 1x1x24 convolution, stride=1, relu activation
+-------------------------------------------------------
+Layer 4: 3x3 max pool, stride=2, none activation
+Layer 4: 1x1x24 convolution, stride=1, relu activation
+**************** End Inception block 4 ****************
+Dropout, group 2
+>>> Start skip connection
+=============== Start Inception block 5 ===============
+Layer 5: 1x1x48 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 5: 1x1x48 convolution, stride=1, relu activation
+Layer 5: 3x3x96 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 5: 1x1x12 convolution, stride=1, relu activation
+Layer 5: 5x5x24 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 5: 3x3 max pool, stride=1, none activation
+Layer 5: 1x1x24 convolution, stride=1, relu activation
+**************** End Inception block 5 ****************
+Dropout, group 2
+=============== Start Inception block 6 ===============
+Layer 6: 1x1x48 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 6: 1x1x48 convolution, stride=1, relu activation
+Layer 6: 3x3x96 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 6: 1x1x12 convolution, stride=1, relu activation
+Layer 6: 5x5x24 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 6: 3x3 max pool, stride=1, none activation
+Layer 6: 1x1x24 convolution, stride=1, relu activation
+**************** End Inception block 6 ****************
+Dropout, group 2
+<<< End skip connection
+=============== Start Inception block 7 ===============
+Layer 7: 1x1x48 convolution, stride=1, relu activation
+Layer 7: 3x3x96 convolution, stride=2, relu activation
+------------------------------------------------------
+Layer 7: 1x1x24 convolution, stride=1, relu activation
+Layer 7: 5x5x48 convolution, stride=2, relu activation
+------------------------------------------------------
+Layer 7: 2x2 max pool, stride=2, none activation
+Layer 7: 1x1x24 convolution, stride=1, relu activation
+-------------------------------------------------------
+Layer 7: 3x3 max pool, stride=2, none activation
+Layer 7: 1x1x24 convolution, stride=1, relu activation
+**************** End Inception block 7 ****************
+Dropout, group 2
+>>> Start skip connection
+=============== Start Inception block 8 ===============
+Layer 8: 1x1x48 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 8: 1x1x48 convolution, stride=1, relu activation
+Layer 8: 3x3x96 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 8: 1x1x12 convolution, stride=1, relu activation
+Layer 8: 5x5x24 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 8: 3x3 max pool, stride=1, none activation
+Layer 8: 1x1x24 convolution, stride=1, relu activation
+**************** End Inception block 8 ****************
+Dropout, group 2
+=============== Start Inception block 9 ===============
+Layer 9: 1x1x48 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 9: 1x1x48 convolution, stride=1, relu activation
+Layer 9: 3x3x96 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 9: 1x1x12 convolution, stride=1, relu activation
+Layer 9: 5x5x24 convolution, stride=1, relu activation
+------------------------------------------------------
+Layer 9: 3x3 max pool, stride=1, none activation
+Layer 9: 1x1x24 convolution, stride=1, relu activation
+**************** End Inception block 9 ****************
+Dropout, group 2
+<<< End skip connection
+=============== Start Inception block 10 ===============
+Layer 10: 1x1x48 convolution, stride=1, relu activation
+Layer 10: 3x3x96 convolution, stride=2, relu activation
+------------------------------------------------------
+Layer 10: 1x1x24 convolution, stride=1, relu activation
+Layer 10: 5x5x48 convolution, stride=2, relu activation
+------------------------------------------------------
+Layer 10: 2x2 max pool, stride=2, none activation
+Layer 10: 1x1x24 convolution, stride=1, relu activation
+-------------------------------------------------------
+Layer 10: 3x3 max pool, stride=2, none activation
+Layer 10: 1x1x24 convolution, stride=1, relu activation
+**************** End Inception block 10 ****************
+Dropout, group 3
+Layer 11: 1x1x64 convolution, stride=1, relu activation
+Dropout, group 3
+Layer 12: 4x4x192 convolution, stride=4, relu activation
+Dropout, group 3
+Layer 13: 384 dense neurons, relu activation
+Dropout, group 3
+Layer 14: 1024 dense neurons, relu activation
+Layer 15 (output): 10 dense neurons, none activation
+
+Loss function: xentropy, regularization: L2
+Optimizer: ADAM
