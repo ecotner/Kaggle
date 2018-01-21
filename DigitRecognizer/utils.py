@@ -163,6 +163,31 @@ def plot_metrics(data_path, plot_path=None):
     ax.set_yscale('log')
     plt.legend()
     plt.savefig(plot_path+'_error.png')
+    
+    # Plot the confidence
+    conf_dict = [('Training','_train_confidence.log'), ('Validation','_val_confidence.log')]
+    plt.figure(num='Uncertainty')
+    plt.clf()
+    ax = plt.gca()
+    for name, file in conf_dict:
+        conf_list = []
+        with open(data_path+file, 'r') as fo:
+            for line in fo:
+                conf_list.append(float(line))
+        x = (log_freq*b_train/(m_train-b_val))*np.arange(len(conf_list))
+        if name == 'Training':
+            x_train = len(x)
+        else:
+            x = (x_train/len(x))*x
+        plt.plot(x, (1-np.array(conf_list)), 'o' , label=name, alpha=0.25)
+    del conf_list
+    plt.title('Average batch uncertainty')
+    plt.xlabel('Epoch')
+    plt.ylabel('Uncertainty')
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    plt.legend()
+    plt.savefig(plot_path+'_uncertainty.png')
 
 if __name__ == '__main__':
-    plot_metrics('./checkpoints/{0}/DigitRecognizer_{0}'.format(1))
+    plot_metrics('./checkpoints/{0}/DigitRecognizer_{0}'.format(2))

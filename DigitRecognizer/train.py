@@ -15,7 +15,7 @@ import pandas as pd
 
 # Define hyperparameters, file paths, and control flow variables
 RESET_PARAMETERS = True
-BATCH_SIZE = 128
+BATCH_SIZE = 256
 VAL_BATCH_SIZE = 256
 LEARNING_RATE = 7e-2
 LEARNING_RATE_ANNEAL_RATE = 50     # Number of epochs after which learning rate is annealed by
@@ -26,10 +26,10 @@ REGULARIZATION_PARAMETER = 1e-2
 INPUT_NOISE_MAGNITUDE = np.sqrt(0.1)
 WEIGHT_NOISE_MAGNITUDE = np.sqrt(0.1)
 KEEP_PROB = {1: .5, 2: 0.6, 3: 0.7}
-SAVE_PATH = './checkpoints/{0}/DigitRecognizer_{0}'.format(1)
+SAVE_PATH = './checkpoints/{0}/DigitRecognizer_{0}'.format(2)
 MAX_EPOCHS = int(1e10)
 DATA_PATH = '../Datasets/MNIST/train.csv'
-LOG_EVERY_N_STEPS = 100
+LOG_EVERY_N_STEPS = 50
 GPU_MEM_FRACTION = 0.6
 
 # Load image data. Returns a pandas Dataframe object
@@ -56,6 +56,7 @@ np.random.seed(RANDOM_SEED)
 X_train = np.random.permutation(X)
 np.random.seed(RANDOM_SEED)
 Y_train = np.random.permutation(Y)
+tf.set_random_seed(RANDOM_SEED)
 del X, Y
 m_train = len(Y_train) - VAL_BATCH_SIZE
 
@@ -121,9 +122,13 @@ with G.as_default():
     Y_train = tf.gather(Y_train, train_idx)
     ge.reroute_ts([X_train, Y_train], [X, labels])
     
-    # Define tensor to compute accuracy metric
+    # Define tensor to compute accuracy and confidence metrics
     Y_pred = tf.argmax(Y, axis=-1, output_type=tf.int32)
-    acc = tf.reduce_mean(tf.cast(tf.equal(Y_train, Y_pred), tf.float32))
+    prob = tf.nn.softmax(Y, dim=-1)
+    Y_pred_prob = tf.reduce_max(prob, axis=-1)
+    A = tf.cast(tf.equal(Y_train, Y_pred), tf.float32)
+    acc = tf.reduce_mean(A)
+    conf = tf.reduce_mean(Y_pred_prob*A)
     
     # Start the TF session and load variables
     config = tf.ConfigProto()
@@ -139,15 +144,20 @@ with G.as_default():
         
         # Initialize control flow variables and logs
         max_val_accuracy = -1
+        max_val_conf = -1
         min_val_loss = np.inf
         global_steps = 0
         with open(SAVE_PATH+'_val_accuracy.log', 'w+') as fo:
                 fo.write('')
         with open(SAVE_PATH+'_val_loss.log', 'w+') as fo:
             fo.write('')
+        with open(SAVE_PATH+'_val_confidence.log', 'w+') as fo:
+            fo.write('')
         with open(SAVE_PATH+'_train_accuracy.log', 'w+') as fo:
             fo.write('')
         with open(SAVE_PATH+'_train_loss.log', 'w+') as fo:
+            fo.write('')
+        with open(SAVE_PATH+'_train_confidence.log', 'w+') as fo:
             fo.write('')
         with open(SAVE_PATH+'_learning_rate.log', 'w+') as fo:
             fo.write('')
@@ -172,7 +182,7 @@ with G.as_default():
                 slice_lower = b*BATCH_SIZE
                 slice_upper = min((b+1)*BATCH_SIZE, m_train)
                 feed_dict = {**{learning_rate:lr, train_idx:range(slice_lower, slice_upper), regularization_parameter:REGULARIZATION_PARAMETER, input_noise_magnitude:INPUT_NOISE_MAGNITUDE, weight_noise:WEIGHT_NOISE_MAGNITUDE}, **{keep_prob[n]:KEEP_PROB[n] for n in range(1,len(KEEP_PROB)+1)}}
-                train_loss, train_accuracy, _ = sess.run([J, acc, training_op], feed_dict=feed_dict)
+                train_loss, train_accuracy, train_conf, _ = sess.run([J, acc, conf, training_op], feed_dict=feed_dict)
                 if (train_loss in [np.nan, np.inf]) or (train_loss > 1e3):
                     print('Detected numerical instability in training, exiting')
                     exit()
@@ -182,27 +192,33 @@ with G.as_default():
                     slice_lower = m_train
                     slice_upper = m_train + VAL_BATCH_SIZE
                     feed_dict = {train_idx:range(slice_lower, slice_upper), regularization_parameter:REGULARIZATION_PARAMETER, input_noise_magnitude:0}
-                    val_loss, val_accuracy = sess.run([J, acc], feed_dict=feed_dict)
+                    val_loss, val_accuracy, val_conf = sess.run([J, acc, conf], feed_dict=feed_dict)
                     print('Validation loss: {:.2e}, validation accuracy: {:.3f}'.format(val_loss, val_accuracy))
                     with open(SAVE_PATH+'_train_loss.log', 'a') as fo:
                         fo.write(str(train_loss)+'\n')
                     with open(SAVE_PATH+'_train_accuracy.log', 'a') as fo:
                         fo.write(str(train_accuracy)+'\n')
+                    with open(SAVE_PATH+'_train_confidence.log', 'a') as fo:
+                        fo.write(str(train_conf)+'\n')
                     with open(SAVE_PATH+'_val_accuracy.log', 'a') as fo:
                         fo.write(str(val_accuracy)+'\n')
                     with open(SAVE_PATH+'_val_loss.log', 'a') as fo:
                         fo.write(str(val_loss)+'\n')
+                    with open(SAVE_PATH+'_val_confidence.log', 'a') as fo:
+                        fo.write(str(val_conf)+'\n')
                     with open(SAVE_PATH+'_learning_rate.log', 'a') as fo:
                         fo.write(str(lr)+'\n')
                     
                     # Save if improvement
-                    if (val_accuracy > max_val_accuracy) or ((val_accuracy >= max_val_accuracy) and (val_loss < min_val_loss)):
-                        max_val_accuracy = val_accuracy
-                        min_val_loss = val_loss
+#                    if (val_accuracy > max_val_accuracy) or ((val_accuracy >= max_val_accuracy) and (val_loss < min_val_loss)):
+#                        max_val_accuracy = val_accuracy
+#                        min_val_loss = val_loss
+                    if val_conf > max_val_conf:
+                        max_val_conf = val_conf
                         print('Saving variables...')
                         saver.save(sess, SAVE_PATH, write_meta_graph=False)
                     
-                print('Epoch: {}, batch: {}/{}, loss: {:.2e}, accuracy: {:.3f}, learning_rate: {:.2e}'.format(epoch, b, m_train//BATCH_SIZE, train_loss, train_accuracy, lr))
+                print('Epoch: {}, batch: {}/{}, loss: {:.2e}, acc: {:.3f}, conf: {:.3f}, lr: {:.2e}'.format(epoch, b, m_train//BATCH_SIZE, train_loss, train_accuracy, train_conf, lr))
                 
                 # Iterate global step
                 global_steps += 1

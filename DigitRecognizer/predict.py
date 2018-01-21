@@ -17,20 +17,16 @@ import pandas as pd
 
 # Define parameters
 DATA_PATH = '../Datasets/MNIST/test.csv'
-SAVE_PATH = './checkpoints/{0}/DigitRecognizer_{0}'.format(1)
+SAVE_PATH = './checkpoints/{0}/DigitRecognizer_{0}'.format(2)
 N_DROPOUT_GROUPS = 3
-PREDICTION_PERIOD = 2.5 # Number of second between displaying successive predictions
+PREDICTION_PERIOD = 10 # Number of second between displaying successive predictions
 BATCH_SIZE = 256
 USE_GPU = True
+GPU_MEM_FRACTION = 0.3
 USE_UNLABELED_DATA = True
+RUN_INDIVIDUAL_INFERENCE = False
+SHOW_MISCLASSIFICATIONS = False
 label_names = ['0','1','2','3','4','5','6','7','8','9']
-
-# Determine whether to run inference on entire set or batches of images at a time
-x = u.input_choice('Run inference on images one by one?\n[y/n]: ', choices=['y','n'])
-if x == 'y':
-    RUN_INDIVIDUAL_INFERENCE = True
-else:
-    RUN_INDIVIDUAL_INFERENCE = False
 
 # Load dataset
 print('Loading test data...')
@@ -41,8 +37,8 @@ print('Processing data...')
 if USE_UNLABELED_DATA:
     X_test = np.reshape(np.array(data_raw.iloc[:,:], dtype=int), [-1,28,28,1])
 else:
-    X_test = np.reshape(np.array(data_raw.iloc[1:,1:], dtype=int), [-1,28,28,1])
-    Y_test = np.array(data_raw.iloc[1:,0], dtype=int)
+    X_test = np.reshape(np.array(data_raw.iloc[:,1:], dtype=int), [-1,28,28,1])
+    Y_test = np.array(data_raw.iloc[:,0], dtype=int)
 del data_raw
 
 # Get mean and std from log file
@@ -73,6 +69,8 @@ with G.as_default():
     if USE_GPU:
         saver = tf.train.import_meta_graph(SAVE_PATH+'.meta', clear_devices=True)
         sess_config = tf.ConfigProto(device_count={'CPU':4, 'GPU':1})
+        sess_config.gpu_options.allow_growth = True
+        sess_config.gpu_options.per_process_gpu_memory_fraction = GPU_MEM_FRACTION
     else:
         tf.device('/cpu:0')
         saver = tf.train.import_meta_graph(SAVE_PATH+'.meta', clear_devices=True)
@@ -115,37 +113,41 @@ with G.as_default():
                 feed_dict = {**{X:X_test[slice_lower:slice_upper,:,:,:], labels:Y_test[slice_lower:slice_upper], is_training:True}, **{keep_prob[n]:1 for n in range(1,N_DROPOUT_GROUPS+1)}}
                 class_prob, loss = sess.run([prob, J], feed_dict=feed_dict)
             class_pred = np.argmax(class_prob, axis=-1).squeeze()
+            if SHOW_MISCLASSIFICATIONS and (not RUN_INDIVIDUAL_INFERENCE):
+                misclassification_idx = np.not_equal(class_pred, Y_test[slice_lower:slice_upper])
+            
             if RUN_INDIVIDUAL_INFERENCE:
                 # Plot each individual image in the batch
                 for idx, lbl in enumerate(class_pred):
-                    tic = time.time()
-                    
-                    # Plot the results
-                    plt.clf()
-                    if X_test.shape[-1] != 1:
-                        img = X_test[slice_lower+idx,:,:,:]
-                    else:
-                        img = X_test[slice_lower+idx,:,:,0]
-                    img = (img - np.min(img))/(np.max(img) - np.min(img))
-                    plt.imshow(img)
-                    if USE_UNLABELED_DATA:
-                        print('Class prob. dist: {}\nClass_pred: {}\n\n'.format(class_prob[idx], label_names[lbl]))
-                        plt.title('Prediction: {} ({:.1f}%)'.format(label_names[lbl], 100*class_prob[idx,lbl]))
-                    else:
-                        if lbl == Y_test[slice_lower+idx]:
-                            right_or_wrong = '\u2714'
+                    if (not SHOW_MISCLASSIFICATIONS) or (misclassification_idx[idx]):
+                        tic = time.time()
+                        
+                        # Plot the results
+                        plt.clf()
+                        if X_test.shape[-1] != 1:
+                            img = X_test[slice_lower+idx,:,:,:]
                         else:
-                            right_or_wrong = 'X'
-                        print('Class prob. dist: {}\nClass_pred: {}, loss: {:.2e}\n\n'.format(class_prob[idx], label_names[lbl], loss))
-                        plt.title('Class: {}, prediction: {} ({:.1f}%) {}'.format(label_names[Y_test[slice_lower+idx]], label_names[lbl], 100*class_prob[idx,lbl], right_or_wrong))
-                    plt.xticks([])
-                    plt.yticks([])
-                    plt.draw()
-                    plt.pause(1e-9)
-                    
-                    # Time delay between plotting
-                    toc = time.time()
-                    time.sleep(max(0, PREDICTION_PERIOD - (toc-tic)))
+                            img = X_test[slice_lower+idx,:,:,0]
+                        img = (img - np.min(img))/(np.max(img) - np.min(img))
+                        plt.imshow(img)
+                        if USE_UNLABELED_DATA:
+                            print('Class prob. dist: {}\nClass_pred: {}\n\n'.format(class_prob[idx], label_names[lbl]))
+                            plt.title('Prediction: {} ({:.1f}%)'.format(label_names[lbl], 100*class_prob[idx,lbl]))
+                        else:
+                            if lbl == Y_test[slice_lower+idx]:
+                                right_or_wrong = '\u2714'
+                            else:
+                                right_or_wrong = 'X'
+                            print('Class prob. dist: {}\nClass_pred: {}, loss: {:.2e}\n\n'.format(class_prob[idx], label_names[lbl], loss))
+                            plt.title('Class: {}, prediction: {} ({:.1f}%) {}'.format(label_names[Y_test[slice_lower+idx]], label_names[lbl], 100*class_prob[idx,lbl], right_or_wrong))
+                        plt.xticks([])
+                        plt.yticks([])
+                        plt.draw()
+                        plt.pause(1e-9)
+                        
+                        # Time delay between plotting
+                        toc = time.time()
+                        time.sleep(max(0, PREDICTION_PERIOD - (toc-tic)))
             else:
                 if USE_UNLABELED_DATA:
                     # Gather predicted labels
