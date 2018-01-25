@@ -9,7 +9,7 @@ Cleans the data and trains the algorithm on an ensemble of SVM
 
 import numpy as np
 import pandas as pd
-from process_data import process_data1, scale_data
+import utils as u
 from sklearn import svm
 
 # Set up important macros
@@ -21,10 +21,10 @@ VAL_FRACTION = 0.25
 data = pd.read_csv(TRAIN_DATA_PATH)
 
 # Clean the data
-X_train, Y_train = process_data1(data)
+X_train, Y_train = u.process_data1(data)
 
 # Scale the data
-X_train, mean, std = scale_data(X_train, sparse_feature_idxs=[1,3,4])
+X_train, mean, std = u.scale_data(X_train, sparse_feature_idxs=[1,3,4])
 
 # Split into training and validation
 m_val = int(VAL_FRACTION * X_train.shape[0])
@@ -64,7 +64,7 @@ print('Ensemble accuracy: {}'.format(ens_accuracy))
 data = pd.read_csv(TEST_DATA_PATH)
 
 # Prepare test set
-X_test, PassengerId = process_data1(data, test=True)
+X_test, PassengerId = u.process_data1(data, test=True)
 X_test = (X_test - np.expand_dims(mean, axis=0)) / np.expand_dims(std, axis=0)
 predictions = np.stack([model[i].predict(X_test) for i in range(5)]).T
 ens_predictions = (np.mean(predictions, axis=1) >= 0.5).astype(int)
