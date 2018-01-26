@@ -29,9 +29,9 @@ all_data = pd.concat([train_data, test_data])
 X, Y = u.process_data2(all_data)
 X, mean, std = u.scale_data(X)
 X_train, Y_train = X[:m_train], Y[:m_train]
-np.random.seed(0)
+np.random.seed(1)
 X_train = np.random.permutation(X_train)
-np.random.seed(0)
+np.random.seed(1)
 Y_train = np.random.permutation(Y_train)
 X_test = X[m_train:]
 PassengerId = np.arange(m_train+1, all_data.shape[0]+1)
@@ -52,16 +52,18 @@ with open('./Titanic.log', 'w+') as fo:
 # Build models using k-fold cross-validation
 model = {}
 N_MODELS = 2
-K_FOLDS = 5
+K_FOLDS = 4
 for k in range(K_FOLDS):
     model[N_MODELS*k+0] = svm.SVC(kernel='rbf', C=1e2, gamma=9e-4, probability=False)
-#    model[N_MODELS*k+1] = svm.SVC(kernel='linear', C=9e-2, gamma=.001, probability=False)
+    model[N_MODELS*k+1] = svm.SVC(kernel='linear', C=9e-2, gamma=.001, probability=False)
 #    model[N_MODELS*k+2] = svm.SVC(kernel='poly', degree=2, C=1e3, gamma=.001, probability=False)
 #    model[N_MODELS*k+3] = svm.SVC(kernel='poly', degree=3, C=3e5, gamma=.0001, probability=False)
 #    model[N_MODELS*k+4] = svm.SVC(kernel='sigmoid', C=2e0, gamma=.001, coef0=0, probability=False)
-    model[N_MODELS*k+1] = MLP(solver='adam', learning_rate='constant', learning_rate_init=3e-3, alpha=1.5e1, hidden_layer_sizes=(50,20), activation='relu')
+#    model[N_MODELS*k+5] = MLP(solver='adam', learning_rate='constant', learning_rate_init=3e-3, alpha=1.5e1, hidden_layer_sizes=(50,20), activation='relu')
 
 # Train and validate models
+model_train_acc_lists = {i:[] for i in range(N_MODELS)}
+model_val_acc_lists = {i:[] for i in range(N_MODELS)}
 for k in range(K_FOLDS):
     # Split into train and validation set
     m_val = m_train//K_FOLDS + 1
@@ -76,7 +78,11 @@ for k in range(K_FOLDS):
         model[N_MODELS*k+idx].fit(X_train_, Y_train_)
         train_accuracy = np.mean(np.equal(model[N_MODELS*k+idx].predict(X_train_)>0.5, Y_train_))
         val_accuracy = np.mean(np.equal(model[N_MODELS*k+idx].predict(X_val)>0.5, Y_val))
-        print('Model {}: train accuracy: {}, validation accuracy: {}'.format(N_MODELS*k+idx, train_accuracy, val_accuracy))
+        model_train_acc_lists[idx].append(train_accuracy)
+        model_val_acc_lists[idx].append(val_accuracy)
+        print('Model {}, fold {}: train accuracy: {:.3f}, validation accuracy: {:.3f}'.format(idx, k, train_accuracy, val_accuracy))
+for idx in range(N_MODELS):
+    print('Model {}: train accuracy: {:.3f}±{:.3f}, validation accuracy: {:.3f}±{:.3f}'.format(idx, np.mean(model_train_acc_lists[idx]), np.std(model_train_acc_lists[idx]), np.mean(model_val_acc_lists[idx]), np.std(model_val_acc_lists[idx])))
 
 ## Do some ensembling
 #predictions = np.stack([model[i].predict(X_train).squeeze() for i in model]).T
