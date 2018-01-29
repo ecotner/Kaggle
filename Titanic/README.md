@@ -27,20 +27,31 @@ This column can mostly be left as-is (except for rescaling after imputation). We
 
 ### Adjacency matrix
 This feature is an attempt to guess at the strength of relations between passengers. The sum of the SibSp and Parch columns provides a decent measure of family groups, but there are other groups as well who have no familial relation. A good example is the following group:
+
 PassengerId	Survived	Pclass	Name			Sex		Age	SibSp	Parch	Ticket	Fare	Cabin	Embarked
+
 75			1			3		Bing, Mr. Lee	male	32	0		0		1601	56.4958			S
+
 839			1			3		Chip, Mr. Chang	male	32	0		0		1601	56.4958			S
+
 644			1			3		Foo, Mr. Choong	male		0		0		1601	56.4958			S
+
 693			1			3		Lam, Mr. Ali	male		0		0		1601	56.4958			S
+
 827			0			3		Lam, Mr. Len	male		0		0		1601	56.4958			S
+
 510			1			3		Lang, Mr. Fang	male	26	0		0		1601	56.4958			S
+
 170			0			3		Ling, Mr. Lee	male	28	0		0		1601	56.4958			S
+
 These gentlemen clearly are travelling together, since they have the same ticket number, fare, embarkation point, pclass, and all appear of Asian origin (while the rest of the ship's passengers are mostly European/Caucasian). Therefore, another metric of group size could be the number of passengers which share a ticket number. We can also immediately rule out connections between passengers who have different embarkation points, had cabins in different decks, etc.
 We can determine the group structure by constructing an approximate adjacency matrix, A = tanh(S), where the elements S_ij correspond to a linear combination of factors determining the strength of the relationship between passengers i and j, such as those mentioned above. A value of -1 means the passengers surely aren't in the same group, while +1 means they surely ARE in the same group. The adjacency matrix itself is too large to be useful as a feature (since it has as many columns as there are passengers), but we can use it to figure other stuff out.
 
 ### Group size
 With the adjacency matrix, we can get an idea of the sizes of groups by simply summing over the elements of A which have a value over some threshold (say 0.5) for each passenger (i.e. group_size = np.sum(A > 0.5, axis=1)). That gives something like the following:
+
 ![group size histogram](./GroupSize.png)
+
 You can see that most people are travelling in small groups of 2-3 people or by themselves. This will be a useful feature.
 
 ### Couples
