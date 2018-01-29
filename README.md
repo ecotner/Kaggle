@@ -1,5 +1,5 @@
 # Kaggle competitions!
-I'm going to keep all the Kaggle competitions I've worked on here.
+I'm going to keep all the Kaggle competitions I've worked on here. My Kaggle profile can be found [here](https://www.kaggle.com/ecotner).
 
 ## Digit Recognizer:
 - Computer vision task to recognize handwritten digits from the MNIST dataset.
