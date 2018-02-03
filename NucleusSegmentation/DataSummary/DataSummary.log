@@ -1,0 +1,3 @@
+Min image size: (256, 256, 4), max image size: (1040, 1388, 4)
+Mean nucleus volume (pixels): 470.0±581.5, mean fractional nucleus volume: 3.15e-03±4.47e-03
+Number of nuclei per image: 44.0±47.9
