@@ -1,0 +1,2 @@
+model_checkpoint_path: "UNet0"
+all_model_checkpoint_paths: "UNet0"

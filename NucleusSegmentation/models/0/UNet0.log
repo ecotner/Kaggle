@@ -1,0 +1,15 @@
+Training log
+
+Dataset metrics:
+Training data shape: (669, 1200, 1400, 4)
+Validation set size: 1
+Hyperparameters:
+Batch size: 1
+Learning rate: 3e-05
+Learning rate annealed every N epochs: 10
+Learning rate anneal type: inverse
+Regularization parameter: 0
+Logging frequency: 20 global steps
+Random seed: 0
+
+Notes:
