@@ -14,9 +14,8 @@ I'm also planning on replacing the vanilla convolutions with Inception blocks so
 import tensorflow as tf
 import tensorflow.contrib.graph_editor as ge
 import numpy as np
-import utils as u
 import math
-import os
+import utils as u
 
 class UNet(object):
     '''
@@ -171,7 +170,7 @@ class UNet(object):
     
     def save_graph(self, save_path):
         with self.G.as_default():
-            tf.train.export_meta_graph(filename=save_path+'.meta')
+            tf.train.export_meta_graph(filename=str(save_path)+'.meta')
     
     def load_graph(self, save_path):
         self.G = tf.Graph()
@@ -205,40 +204,84 @@ class UNet(object):
         '''
         
         # (Re)load base graph from file
+        print('Loading graph...')
         saver = self.load_graph(save_path)
-        
-        # Add optimizer
-#        un.add_optimizer(opt_type=optimizer)
         
         with self.G.as_default():
             
+            print('Inserting data augmentation operations...')
             # Load data onto GPU, replace the input placeholder with an index into the data on the GPU (if applicable)
-            m_train = X_train.shape[0]
+            m_train, height, width, n_channels = X_train.shape
             m_val = X_val.shape[0]
             m = m_train + m_val
             n_classes = Y_train.shape[-1]
             if data_on_GPU:
-                X_train_t = tf.constant(X_train, dtype=tf.float32)
-                X_val_t = tf.constant(X_val, dtype=tf.float32)
-                Y_train_t = tf.constant(Y_train, dtype=tf.float32)
-                Y_val_t = tf.constant(Y_val, dtype=tf.float32)
+                X_train_t = tf.constant(X_train, dtype=tf.uint8)
+                X_val_t = tf.constant(X_val, dtype=tf.uint8)
+                Y_train_t = tf.constant(Y_train, dtype=tf.bool)
+                Y_val_t = tf.constant(Y_val, dtype=tf.bool)
                 del X_train, X_val, Y_train, Y_val
                 train_idx = tf.placeholder_with_default([0], shape=[None])
                 X_train_t = tf.gather(X_train_t, train_idx, axis=0)
                 Y_train_t = tf.gather(Y_train_t, train_idx, axis=0)
             else:
-                X_train_t = self.input
-                X_val_t = tf.placeholder(dtype=tf.float32, shape=X_train_t.shape)
-                Y_train_t = self.labels
-                Y_val_t = tf.placeholder(dtype=tf.float32, shape=Y_train_t.shape)
+                X_train_t = tf.placeholder_with_default(np.zeros([0,height,width,n_channels], dtype=np.uint8), shape=self.input.shape, name='X_train_input')
+                X_val_t = tf.placeholder_with_default(np.zeros([0,height,width,n_channels], dtype=np.uint8), shape=self.input.shape, name='X_val_input')
+                Y_train_t = tf.placeholder_with_default(np.zeros([0,height,width,n_classes], dtype=np.bool), shape=self.labels.shape, name='Y_train_input')
+                Y_val_t = tf.placeholder_with_default(np.zeros([0,height,width,n_classes], dtype=np.bool), shape=self.labels.shape, name='Y_val_input')
             # Insert data augmentation steps to graph
             train_or_val_idx = tf.placeholder(dtype=tf.int32, shape=[None])
-            X_train_t, Y_train_t = self.data_augmentation(X_train_t, Y_train_t)
-            X = tf.gather(tf.concat([X_train_t, X_val_t], axis=0), train_or_val_idx)
-            Y = tf.gather(tf.concat([Y_train_t, Y_val_t], axis=0), train_or_val_idx)
+            X_train_aug, Y_train_aug = self.data_augmentation(X_train_t, Y_train_t)
+            X = tf.cast(tf.gather(tf.concat([X_train_aug, X_val_t], axis=0), train_or_val_idx), tf.float32)
+            Y = tf.cast(tf.gather(tf.concat([Y_train_aug, Y_val_t], axis=0), train_or_val_idx), tf.float32)
             ge.swap_ts([X, Y], [self.input, self.labels]) # Use X and Y from now on!
             
+            # Write to log file
+            with open(str(save_path)+'.log', 'w+') as fo:
+                fo.write('Training log\n\n')
+                fo.write('Dataset metrics:\n')
+                fo.write('Training data shape: {}\n'.format(X_train.shape))
+                fo.write('Validation set size: {}\n'.format(m_val))
+#                fo.write('X_mean: {}\n'.format(X_mean))
+#                fo.write('X_std: {}\n\n'.format(X_std))
+                fo.write('Hyperparameters:\n')
+                fo.write('Batch size: {}\n'.format(batch_size))
+                fo.write('Learning rate: {}\n'.format(learning_rate_init))
+                fo.write('Learning rate annealed every N epochs: {}\n'.format(learning_rate_decay_parameter))
+                fo.write('Learning rate anneal type: {}\n'.format(learning_rate_decay_type))
+#                fo.write('Stepped anneal: {}\n'.format(STEPPED_ANNEAL))
+#                fo.write('Regularization type: {}\n'.format(REGULARIZATION_TYPE))
+                fo.write('Regularization parameter: {}\n'.format(reg_param))
+#                fo.write('Input noise variance: {:.2f}\n'.format(INPUT_NOISE_MAGNITUDE**2))
+#                fo.write('Weight noise variance: {:.2f}\n'.format(WEIGHT_NOISE_MAGNITUDE**2))
+#                for n in range(1,len(KEEP_PROB)+1):
+#                    fo.write('Dropout keep prob. group {}: {:.2f}\n'.format(n, KEEP_PROB[n]))
+                fo.write('Logging frequency: {} global steps\n'.format(check_val_every_n_batches))
+                fo.write('Random seed: {}\n'.format(seed))
+                fo.write('\nNotes:\n')
+            
+            # Initialize control flow variables and logs
+#            max_val_accuracy = -1
+#            max_val_conf = -1
+            best_val_loss = np.inf
+            global_step = 0
+#            with open(str(save_path)+'_val_accuracy.log', 'w+') as fo:
+#                fo.write('')
+            with open(str(save_path)+'_val_loss.log', 'w+') as fo:
+                fo.write('')
+#            with open(str(save_path)+'_val_confidence.log', 'w+') as fo:
+#                fo.write('')
+#            with open(str(save_path)+'_train_accuracy.log', 'w+') as fo:
+#                fo.write('')
+            with open(str(save_path)+'_train_loss.log', 'w+') as fo:
+                fo.write('')
+#            with open(str(save_path)+'_train_confidence.log', 'w+') as fo:
+#                fo.write('')
+            with open(str(save_path)+'_learning_rate.log', 'w+') as fo:
+                fo.write('')
+            
             # Start tensorflow session, reset_parameters or reload checkpoint
+            print('Starting tensorflow session...')
             with tf.Session() as sess:
                 if reset_parameters:
                     saver = tf.train.Saver()
@@ -256,7 +299,6 @@ class UNet(object):
                 sess.run(tf.variables_initializer(uninitialized_vars))
                 
                 # Iterate over training epochs
-                global_step = 0
                 best_val_loss = np.inf
                 for epoch in range(max_epochs):
                     if learning_rate_decay_type == 'inverse':
@@ -275,25 +317,44 @@ class UNet(object):
                         train_idx_f = min((b+1)*batch_size, m_train)
                         
                         if data_on_GPU:
-                            feed_dict={train_idx:range(train_idx_i, train_idx_f), train_or_val_idx:range(train_idx_f-train_idx_i), self.learning_rate:learning_rate, self.reg_param:reg_param}
+                            feed_dict={train_idx:range(train_idx_i, train_idx_f+1), train_or_val_idx:range(train_idx_f-train_idx_i), self.learning_rate:learning_rate, self.reg_param:reg_param}
                         else:
-                            raise Exception('Havent figured out how to handle data not on the GPU yet')
-                        loss, _ = sess.run([self.loss, self.train_op], feed_dict=feed_dict)
-                        print('Epoch {}, batch {}/{}: loss={:.3e}'.format(epoch+1, b, n_batches, loss))
-                        if np.isnan(loss) or np.isinf(loss):
+                            feed_dict={X_train_t:X_train[train_idx_i:train_idx_f], Y_train_t:Y_train[train_idx_i:train_idx_f], train_or_val_idx:range(train_idx_f-train_idx_i), self.learning_rate:learning_rate, self.reg_param:reg_param}
+                        train_loss, _ = sess.run([self.loss, self.train_op], feed_dict=feed_dict)
+                        print('Epoch {}, batch {}/{}: loss={:.3e}'.format(epoch+1, b, n_batches, train_loss))
+                        if np.isnan(train_loss) or np.isinf(train_loss):
                             print('Detected nan, exiting training')
                             quit()
                             exit()
                             break
                         
                         if (global_step % check_val_every_n_batches) == 0:
-                            feed_dict = {train_or_val_idx:range(1,m_val+1), self.reg_param:reg_param}
+                            if data_on_GPU:
+                                feed_dict = {train_or_val_idx:range(1,m_val+1), self.reg_param:reg_param}
+                            else:
+                                feed_dict = {X_val_t:X_val, Y_val_t:Y_val, train_or_val_idx:range(m_val), self.reg_param:reg_param}
                             val_loss = sess.run(self.loss, feed_dict=feed_dict)
                             if early_stopping and (val_loss < best_val_loss):
                                 best_val_loss = val_loss
                                 print('New best validation loss: {:.3e}! Saving...'.format(val_loss))
                                 saver.save(sess, save_path, write_meta_graph=False)
-#                            u.plot_stuff()
+                            
+                            # Write to logs everytime validation set run
+                            with open(str(save_path)+'_train_loss.log', 'a') as fo:
+                                fo.write(str(train_loss)+'\n')
+#                                with open(str(save_path)+'_train_accuracy.log', 'a') as fo:
+#                                    fo.write(str(train_accuracy)+'\n')
+#                                with open(str(save_path)+'_train_confidence.log', 'a') as fo:
+#                                    fo.write(str(train_conf)+'\n')
+#                                with open(str(save_path)+'_val_accuracy.log', 'a') as fo:
+#                                    fo.write(str(val_accuracy)+'\n')
+                            with open(str(save_path)+'_val_loss.log', 'a') as fo:
+                                fo.write(str(val_loss)+'\n')
+#                                with open(str(save_path)+'_val_confidence.log', 'a') as fo:
+#                                    fo.write(str(val_conf)+'\n')
+                            with open(str(save_path)+'_learning_rate.log', 'a') as fo:
+                                fo.write(str(learning_rate)+'\n')
+                            u.plot_metrics(str(save_path))
                                 
                         global_step += 1
     
@@ -321,7 +382,7 @@ if __name__ == '__main__':
     X_val = np.random.randn(5,25,25,4)
     Y_train = (np.random.randn(100,25,25,1)>0).astype(int)
     Y_val = (np.random.randn(5,25,25,1)).astype(int)
-    un.train(X_train, Y_train, X_val, Y_val, max_epochs=100, batch_size=10, learning_rate_init=1e-3, learning_rate_decay_type='constant', data_on_GPU=True, reset_parameters=True, early_stopping=True, save_path='./UNet')
+    un.train(X_train, Y_train, X_val, Y_val, max_epochs=100, batch_size=10, learning_rate_init=1e-3, learning_rate_decay_type='inverse', data_on_GPU=False, reset_parameters=True, early_stopping=True, save_path='./UNet')
 
 
 
