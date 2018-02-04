@@ -165,7 +165,7 @@ def summarize_data():
 ''' ======================================================================== '''
 #plot_images()
 #plot_masked_images()
-summarize_data()
+#summarize_data()
 
 
 
