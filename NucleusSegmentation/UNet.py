@@ -16,6 +16,10 @@ import tensorflow.contrib.graph_editor as ge
 import numpy as np
 import math
 import utils as u
+import matplotlib.pyplot as plt
+import time
+from pathlib import Path
+import re
 
 class UNet(object):
     '''
@@ -46,6 +50,7 @@ class UNet(object):
             self.learning_rate = None
             self.optimizer_placeholders = None
             self.train_op = None
+            self.keep_prob_dict = {}
     
     def f_act(self, x, activation):
         if activation == 'relu':
@@ -112,8 +117,15 @@ class UNet(object):
     def stretch_inception_block(self):
         pass
     
-    def dropout(self):
-        pass
+    def dropout(self, group):
+        with self.G.as_default():
+            if group in self.keep_prob_dict:
+                keep_prob = self.keep_prob_dict[group]
+            else:
+                keep_prob = tf.placeholder_with_default(1.0, shape=[], name='keep_prob_'+str(group))
+                self.keep_prob_dict[group] = keep_prob
+                tf.add_to_collection('keep_prob', keep_prob)
+            self.output = tf.nn.dropout(self.output, keep_prob)
     
     def add_loss(self, loss_type='xentropy', reg_type='L2'):
         with self.G.as_default():
@@ -176,7 +188,7 @@ class UNet(object):
         self.G = tf.Graph()
         with self.G.as_default():
             # Actually load the graph
-            saver = tf.train.import_meta_graph(save_path+'.meta')
+            saver = tf.train.import_meta_graph(str(save_path)+'.meta')
             
             # Rebind attributes
             self.input = self.G.get_tensor_by_name('input:0')
@@ -186,35 +198,48 @@ class UNet(object):
             self.loss = self.G.get_tensor_by_name('loss:0')
             self.labels = self.G.get_tensor_by_name('labels:0')
             self.reg_param = self.G.get_tensor_by_name('reg_param:0')
-            try:
-                self.learning_rate = self.G.get_tensor_by_name('learning_rate:0')
-                self.optimizer_placeholders = tf.get_collection('optimizer_placeholders')
-                self.train_op = self.G.get_operation_by_name('train_op')
-            except:
-                print('Warning: no optimizer found')
+            self.learning_rate = self.G.get_tensor_by_name('learning_rate:0')
+            self.optimizer_placeholders = tf.get_collection('optimizer_placeholders')
+            self.train_op = self.G.get_operation_by_name('train_op')
+            self.keep_prob_dict = {i:T for i, T in enumerate(tf.get_collection('keep_prob'))}
         return saver
     
     def data_augmentation(self, X, Y):
         ''' Performs data augmentation on input batches. Just returns identity for now. '''
         return X, Y
     
-    def train(self, X_train, Y_train, X_val, Y_val, max_epochs, batch_size, learning_rate_init, reg_param=0, learning_rate_decay_type='inverse', learning_rate_decay_parameter=10, early_stopping=True, save_path='./UNet', reset_parameters=False, check_val_every_n_batches=5, seed=0, data_on_GPU=True):
+    def train(self, X_train, Y_train, X_val, Y_val, max_epochs, batch_size, learning_rate_init, reg_param=0, learning_rate_decay_type='inverse', learning_rate_decay_parameter=10, keep_prob=[], early_stopping=True, save_path=Path('./UNet'), reset_parameters=False, val_checks_per_epoch=10, seed=None, data_on_GPU=True):
         '''
         Trains the network on the given data, provided as numpy arrays. It is assumed all preprocessing has already been done, including shuffling and splitting of the data into training/validation sets.
         '''
+        assert type(save_path) == type(Path('.')), 'save_path needs to be a pathlib Path'
+        check_val_every_n_batches = math.ceil(X_train.shape[0]/batch_size/val_checks_per_epoch)
         
         # (Re)load base graph from file
         print('Loading graph...')
         saver = self.load_graph(save_path)
         
         with self.G.as_default():
+            # Set the seed
+            if seed is None:
+                seed = int(time.time())
+            tf.set_random_seed(seed)
+            np.random.seed(seed)
             
             print('Inserting data augmentation operations...')
-            # Load data onto GPU, replace the input placeholder with an index into the data on the GPU (if applicable)
+            # Get dataset size/statistics
             m_train, height, width, n_channels = X_train.shape
             m_val = X_val.shape[0]
             m = m_train + m_val
             n_classes = Y_train.shape[-1]
+            X_train_mean = np.mean(X_train)
+            X_val_mean = np.mean(X_val)
+            X_mean = ((m_train*X_train_mean + m_val*X_val_mean)/m)
+            X_train_var = u.var(X_train, X_mean)
+            X_val_var = u.var(X_val, X_mean)
+            X_std = np.sqrt((m_train*X_train_var + m_val*X_val_var)/m)
+            
+            # Load data onto GPU, replace the input placeholder with an index into the data on the GPU (if applicable)
             if data_on_GPU:
                 X_train_t = tf.constant(X_train, dtype=tf.uint8)
                 X_val_t = tf.constant(X_val, dtype=tf.uint8)
@@ -232,9 +257,20 @@ class UNet(object):
             # Insert data augmentation steps to graph
             train_or_val_idx = tf.placeholder(dtype=tf.int32, shape=[None])
             X_train_aug, Y_train_aug = self.data_augmentation(X_train_t, Y_train_t)
-            X = tf.cast(tf.gather(tf.concat([X_train_aug, X_val_t], axis=0), train_or_val_idx), tf.float32)
+            X = (tf.cast(tf.gather(tf.concat([X_train_aug, X_val_t], axis=0), train_or_val_idx), tf.float32) - X_mean)/X_std
             Y = tf.cast(tf.gather(tf.concat([Y_train_aug, Y_val_t], axis=0), train_or_val_idx), tf.float32)
             ge.swap_ts([X, Y], [self.input, self.labels]) # Use X and Y from now on!
+            
+            # Add metrics
+            prob = tf.sigmoid(self.output)
+            Y_bool = tf.cast(Y, bool)
+            is_over_thresh = (prob>0.5)
+            is_equal = tf.equal(is_over_thresh, Y_bool)
+            intersection = tf.reduce_sum(tf.cast(tf.logical_and(is_over_thresh, Y_bool), tf.float32))
+            union = tf.reduce_sum(tf.cast(tf.logical_or(is_over_thresh, Y_bool), tf.float32))
+            acc = tf.reduce_mean(tf.cast(is_equal, tf.float32))
+            conf = tf.reduce_mean(2*tf.abs(prob-0.5)*tf.cast(is_equal, tf.float32))
+            IOU = intersection/union
             
             # Write to log file
             with open(str(save_path)+'.log', 'w+') as fo:
@@ -242,52 +278,63 @@ class UNet(object):
                 fo.write('Dataset metrics:\n')
                 fo.write('Training data shape: {}\n'.format(X_train.shape))
                 fo.write('Validation set size: {}\n'.format(m_val))
-#                fo.write('X_mean: {}\n'.format(X_mean))
-#                fo.write('X_std: {}\n\n'.format(X_std))
+                fo.write('X_mean: {}\n'.format(X_mean))
+                fo.write('X_std: {}\n\n'.format(X_std))
                 fo.write('Hyperparameters:\n')
                 fo.write('Batch size: {}\n'.format(batch_size))
                 fo.write('Learning rate: {}\n'.format(learning_rate_init))
-                fo.write('Learning rate annealed every N epochs: {}\n'.format(learning_rate_decay_parameter))
-                fo.write('Learning rate anneal type: {}\n'.format(learning_rate_decay_type))
+                fo.write('Learning rate decay parameter: {}\n'.format(learning_rate_decay_parameter))
+                fo.write('Learning rate decay type: {}\n'.format(learning_rate_decay_type))
 #                fo.write('Stepped anneal: {}\n'.format(STEPPED_ANNEAL))
 #                fo.write('Regularization type: {}\n'.format(REGULARIZATION_TYPE))
                 fo.write('Regularization parameter: {}\n'.format(reg_param))
 #                fo.write('Input noise variance: {:.2f}\n'.format(INPUT_NOISE_MAGNITUDE**2))
 #                fo.write('Weight noise variance: {:.2f}\n'.format(WEIGHT_NOISE_MAGNITUDE**2))
-#                for n in range(1,len(KEEP_PROB)+1):
-#                    fo.write('Dropout keep prob. group {}: {:.2f}\n'.format(n, KEEP_PROB[n]))
+                for n in range(len(keep_prob)):
+                    fo.write('Dropout keep prob. group {}: {:.2f}\n'.format(n, keep_prob[n]))
                 fo.write('Logging frequency: {} global steps\n'.format(check_val_every_n_batches))
                 fo.write('Random seed: {}\n'.format(seed))
-                fo.write('\nNotes:\n')
             
             # Initialize control flow variables and logs
-#            max_val_accuracy = -1
-#            max_val_conf = -1
-            best_val_loss = np.inf
+#            best_val_accuracy = 0
+            best_val_conf = 0
+#            best_val_loss = np.inf
             global_step = 0
-#            with open(str(save_path)+'_val_accuracy.log', 'w+') as fo:
-#                fo.write('')
-            with open(str(save_path)+'_val_loss.log', 'w+') as fo:
+            if reset_parameters:
+                io_mode = 'w+'
+            else:
+                io_mode = 'a+'
+            with open(str(save_path)+'_val_accuracy.log', io_mode) as fo:
                 fo.write('')
-#            with open(str(save_path)+'_val_confidence.log', 'w+') as fo:
-#                fo.write('')
-#            with open(str(save_path)+'_train_accuracy.log', 'w+') as fo:
-#                fo.write('')
-            with open(str(save_path)+'_train_loss.log', 'w+') as fo:
+            with open(str(save_path)+'_val_loss.log', io_mode) as fo:
                 fo.write('')
-#            with open(str(save_path)+'_train_confidence.log', 'w+') as fo:
-#                fo.write('')
-            with open(str(save_path)+'_learning_rate.log', 'w+') as fo:
+            with open(str(save_path)+'_val_confidence.log', io_mode) as fo:
+                fo.write('')
+            with open(str(save_path)+'_val_IOU.log', io_mode) as fo:
+                fo.write('')
+            with open(str(save_path)+'_train_accuracy.log', io_mode) as fo:
+                fo.write('')
+            with open(str(save_path)+'_train_loss.log', io_mode) as fo:
+                fo.write('')
+            with open(str(save_path)+'_train_confidence.log', io_mode) as fo:
+                fo.write('')
+            with open(str(save_path)+'_train_IOU.log', io_mode) as fo:
+                fo.write('')
+            with open(str(save_path)+'_learning_rate.log', io_mode) as fo:
                 fo.write('')
             
             # Start tensorflow session, reset_parameters or reload checkpoint
             print('Starting tensorflow session...')
             with tf.Session() as sess:
                 if reset_parameters:
-                    saver = tf.train.Saver()
+#                    saver = tf.train.Saver()
                     sess.run(tf.global_variables_initializer())
                 else:
-                    saver.restore(sess, save_path)
+                    try:
+                        saver.restore(sess, save_path)
+                    except:
+#                        saver = tf.train.Saver()
+                        sess.run(tf.global_variables_initializer())
                 
                 uninitialized_vars = []
                 for var in tf.global_variables():
@@ -299,7 +346,6 @@ class UNet(object):
                 sess.run(tf.variables_initializer(uninitialized_vars))
                 
                 # Iterate over training epochs
-                best_val_loss = np.inf
                 for epoch in range(max_epochs):
                     if learning_rate_decay_type == 'inverse':
                         learning_rate = learning_rate_init/(1+epoch/learning_rate_decay_parameter)
@@ -317,72 +363,152 @@ class UNet(object):
                         train_idx_f = min((b+1)*batch_size, m_train)
                         
                         if data_on_GPU:
-                            feed_dict={train_idx:range(train_idx_i, train_idx_f+1), train_or_val_idx:range(train_idx_f-train_idx_i), self.learning_rate:learning_rate, self.reg_param:reg_param}
+                            feed_dict = {train_idx:range(train_idx_i, train_idx_f+1), train_or_val_idx:range(train_idx_f-train_idx_i), self.learning_rate:learning_rate, self.reg_param:reg_param}
                         else:
-                            feed_dict={X_train_t:X_train[train_idx_i:train_idx_f], Y_train_t:Y_train[train_idx_i:train_idx_f], train_or_val_idx:range(train_idx_f-train_idx_i), self.learning_rate:learning_rate, self.reg_param:reg_param}
-                        train_loss, _ = sess.run([self.loss, self.train_op], feed_dict=feed_dict)
-                        print('Epoch {}, batch {}/{}: loss={:.3e}'.format(epoch+1, b, n_batches, train_loss))
+                            feed_dict = {X_train_t:X_train[train_idx_i:train_idx_f], Y_train_t:Y_train[train_idx_i:train_idx_f], train_or_val_idx:range(train_idx_f-train_idx_i), self.learning_rate:learning_rate, self.reg_param:reg_param}
+                        feed_dict = {**feed_dict, **{self.keep_prob_dict[i]:kp for i, kp in enumerate(keep_prob)}}
+                        train_loss, train_acc, train_conf, train_IOU, _ = sess.run([self.loss, acc, conf, IOU, self.train_op], feed_dict=feed_dict)
+                        print('Epoch {}, batch {}/{}: loss={:.3e}, acc={:.3f}, IOU={:.3f}'.format(epoch+1, b, n_batches, train_loss, train_acc, train_IOU))
                         if np.isnan(train_loss) or np.isinf(train_loss):
                             print('Detected nan, exiting training')
                             quit()
                             exit()
                             break
                         
-                        if (global_step % check_val_every_n_batches) == 0:
+                        if ((global_step % check_val_every_n_batches) == 0) and (global_step != 0):
+                            
                             if data_on_GPU:
                                 feed_dict = {train_or_val_idx:range(1,m_val+1), self.reg_param:reg_param}
                             else:
                                 feed_dict = {X_val_t:X_val, Y_val_t:Y_val, train_or_val_idx:range(m_val), self.reg_param:reg_param}
-                            val_loss = sess.run(self.loss, feed_dict=feed_dict)
-                            if early_stopping and (val_loss < best_val_loss):
-                                best_val_loss = val_loss
-                                print('New best validation loss: {:.3e}! Saving...'.format(val_loss))
-                                saver.save(sess, save_path, write_meta_graph=False)
+                            val_loss, val_acc, val_conf, val_IOU = sess.run([self.loss, acc, conf, IOU], feed_dict=feed_dict)
+                            print('Validation set: loss={:.3e}, acc={:.3f}, IOU={:.3f}'.format(val_loss, val_acc, val_IOU))
+                            if early_stopping and (val_conf > best_val_conf):
+                                best_val_conf = val_conf
+                                print('New best validation confidence: {:.3e}! Saving...'.format(val_conf))
+                                saver.save(sess, str(save_path), write_meta_graph=False)
                             
-                            # Write to logs everytime validation set run
+                            # Write to logs everytime validation set is run
                             with open(str(save_path)+'_train_loss.log', 'a') as fo:
                                 fo.write(str(train_loss)+'\n')
-#                                with open(str(save_path)+'_train_accuracy.log', 'a') as fo:
-#                                    fo.write(str(train_accuracy)+'\n')
-#                                with open(str(save_path)+'_train_confidence.log', 'a') as fo:
-#                                    fo.write(str(train_conf)+'\n')
-#                                with open(str(save_path)+'_val_accuracy.log', 'a') as fo:
-#                                    fo.write(str(val_accuracy)+'\n')
+                            with open(str(save_path)+'_train_accuracy.log', 'a') as fo:
+                                fo.write(str(train_acc)+'\n')
+                            with open(str(save_path)+'_train_confidence.log', 'a') as fo:
+                                fo.write(str(train_conf)+'\n')
+                            with open(str(save_path)+'_train_IOU.log', 'a') as fo:
+                                fo.write(str(train_IOU)+'\n')
+                            with open(str(save_path)+'_val_accuracy.log', 'a') as fo:
+                                fo.write(str(val_acc)+'\n')
                             with open(str(save_path)+'_val_loss.log', 'a') as fo:
                                 fo.write(str(val_loss)+'\n')
-#                                with open(str(save_path)+'_val_confidence.log', 'a') as fo:
-#                                    fo.write(str(val_conf)+'\n')
+                            with open(str(save_path)+'_val_confidence.log', 'a') as fo:
+                                fo.write(str(val_conf)+'\n')
+                            with open(str(save_path)+'_val_IOU.log', 'a') as fo:
+                                fo.write(str(val_IOU)+'\n')
                             with open(str(save_path)+'_learning_rate.log', 'a') as fo:
                                 fo.write(str(learning_rate)+'\n')
-                            u.plot_metrics(str(save_path))
-                                
+                            
+                            # Plot metrics (actually, I can just run this manually)
+#                            u.plot_metrics(str(save_path))
+                        
+                        # Iterate global step
                         global_step += 1
+                    
+                    # Save if not using early stopping
+                    if not early_stopping:
+                        saver.save(sess, str(save_path), write_meta_graph=False)
+                    
+                    # Plot an example of how the algorithm is doing on the task
+                    if data_on_GPU:
+                        pass
+                    else:
+                        x = X_val[0]
+                        feed_dict = {X_val_t:np.expand_dims(x, axis=0), Y_val_t:np.expand_dims(Y_val[0], axis=0), train_or_val_idx:range(1), self.reg_param:reg_param}
+                        y = sess.run(prob, feed_dict=feed_dict).squeeze()
+                    plt.ioff()
+                    plt.figure('Progress pic')
+                    plt.clf()
+                    plt.imshow((x-np.min(x))/(np.max(x)-np.min(x)))
+                    plt.imshow(y, alpha=0.4)
+                    (save_path.parent/'ProgressPics').mkdir(exist_ok=True)
+                    plt.savefig(str(save_path.parent)+'/ProgressPics/ProgressPic{}.png'.format(epoch))
     
-    def predict(self):
-        pass
+    def predict(self, X, save_path, Y=None, write_prediction=False, batch_size=1):
+        ''' Run inference on X. '''
+        with self.G.as_default():
+            
+            # Get mean and std from log file
+            p_mean = re.compile('X_mean')
+            p_std = re.compile('X_std')
+            p_float = re.compile(r'\d+\.\d+')
+            with open(str(save_path)+'.log', 'r') as fo:
+                for line in fo:
+                    if re.match(p_mean, line) is not None:
+                        m = re.search(p_float, line)
+                        X_mean = float(m.group())
+                    elif re.match(p_std, line) is not None:
+                        m = re.search(p_float, line)
+                        X_std = float(m.group())
+            # Apply normalization
+            X -= X_mean
+            X /= X_std
+        
+            # Add metrics
+            prob = tf.sigmoid(self.output)
+            Y_bool = tf.cast(self.labels, bool)
+            is_over_thresh = (prob>0.5)
+            is_equal = tf.equal(is_over_thresh, Y_bool)
+            intersection = tf.reduce_sum(tf.cast(tf.logical_and(is_over_thresh, Y_bool), tf.float32))
+            union = tf.reduce_sum(tf.cast(tf.logical_or(is_over_thresh, Y_bool), tf.float32))
+            acc = tf.reduce_mean(tf.cast(is_equal, tf.float32))
+            conf = tf.reduce_mean(2*tf.abs(prob-0.5)*tf.cast(is_equal, tf.float32))
+            IOU = intersection/union
+            
+            saver = self.load_graph(save_path)
+            
+            with tf.Session() as sess:
+                saver.restore(sess, save_path)
+                
+                y_list = []
+                for b in range(X.shape[0]):
+                    if Y is not None:
+                        feed_dict = {self.input:X[b*batch_size:(b+1)*batch_size], self.labels:Y[b*batch_size:(b+1)*batch_size]}
+                        pred_acc, pred_conf, pred_IOU = sess.run([acc, conf, IOU], feed_dict=feed_dict)
+                        print('Error: {:.3e}, Uncertainty: {:.3e}, IOU: {:.3f}'.format(np.mean(1-pred_acc), np.mean(1-pred_conf), np.mean(pred_IOU)))
+                    else:
+                        feed_dict = {self.input:X[b*batch_size:(b+1)*batch_size]}
+                        y = sess.run(prob, feed_dict=feed_dict)
+                        y_list.append(y)
+                        # What to do with predictions now?
+            
+                    
+                
 
 
 # Testing to make sure everything runs smoothly
 if __name__ == '__main__':
     un = UNet()
     un.convolution(3,1,5, activation='relu')
+    un.dropout(1)
     un.squeeze_convolution(3,2,4)
     un.convolution(3,1,7)
+    un.dropout(2)
     un.squeeze_convolution(3,2,19)
     un.convolution(3,1,31)
+    un.dropout(3)
     un.stretch_transpose_convolution(3,2,40)
     un.convolution(3,1,2)
     un.stretch_transpose_convolution(3,2,15)
     un.convolution(1,1,1, activation='identity')
     un.add_loss('xentropy')
     un.add_optimizer('adam')
-    un.save_graph('./UNet')
+    un.save_graph('./models/test/test')
     
     X_train = np.random.randn(100,25,25,4)
-    X_val = np.random.randn(5,25,25,4)
+    X_val = np.random.randn(10,25,25,4)
     Y_train = (np.random.randn(100,25,25,1)>0).astype(int)
-    Y_val = (np.random.randn(5,25,25,1)).astype(int)
-    un.train(X_train, Y_train, X_val, Y_val, max_epochs=100, batch_size=10, learning_rate_init=1e-3, learning_rate_decay_type='inverse', data_on_GPU=False, reset_parameters=True, early_stopping=True, save_path='./UNet')
+    Y_val = (np.random.randn(10,25,25,1)).astype(int)
+    un.train(X_train, Y_train, X_val, Y_val, max_epochs=20, batch_size=10, learning_rate_init=1e-3, learning_rate_decay_type='inverse', data_on_GPU=False, keep_prob=[0.8, 0.8, 0.9], reset_parameters=True, early_stopping=True, val_checks_per_epoch=2, save_path=Path('./models/test/test'), seed=0)
 
 
 
