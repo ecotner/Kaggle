@@ -1,0 +1,18 @@
+Training log
+
+Dataset metrics:
+Training data shape: (24104, 256, 256, 4)
+Validation set size: 16
+X_mean: 96.58681803461332
+X_std: 109.06826655739846
+
+Hyperparameters:
+Batch size: 16
+Learning rate: 0.0002
+Learning rate decay parameter: 1
+Learning rate decay type: constant
+Regularization parameter: 0
+Dropout keep prob. group 0: 0.90
+Dropout keep prob. group 1: 0.90
+Logging frequency: 151 global steps
+Random seed: 0

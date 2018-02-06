@@ -1,0 +1,6 @@
+- Added data normalization (subtract off mean and divide by standard deviation)
+- Added dropout
+- Doubled the depth of the network and halved the batch size (to keep memory usage constant)
+- Added accuracy and confidence metrics (plotted as error and uncertainty)
+- Added progress pic generated at end of epoch
+- Added IOU (Intersection Over Union) metric, as that's what the Kaggle competition is graded on

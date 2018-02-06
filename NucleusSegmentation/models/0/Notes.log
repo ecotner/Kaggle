@@ -1,0 +1,5 @@
+- Training loss seems to be oscillating between two values; try shuffling dataset.
+- Training is proceeding extrememly slowly since the images are so large (1200x1400) due to the reflect/crop procedure; try breaking images up into smaller pieces.
+- Another problem with such large images is that the GPU runs out of memory if the batch size is any larger than three!
+- Validation loss on the large (1200x1400) images seems to stall out at a constant value (though I was using inverse learning rate decay, so that may have something to do with it).
+- Augmented training set so that images are scaled up to 256*6=1536 pixels on a side using the reflection/crop technique, then the images are split into 36 sub-images of dimension 256x256.
