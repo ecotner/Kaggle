@@ -1,4 +1,5 @@
+*.py[cod]
 Datsets/NucleusSegmentation/
-NucleusSegmentation/__pycache__/
+__pycache_/
 NucleusSegmentation/models/*/UNet*.data*
 
