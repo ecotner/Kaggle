@@ -32,10 +32,8 @@ def stack_masks(save_path):
         stacked_img = Image.fromarray(stacked_img)
         stacked_img.save(x/'stacked_img.png')
 
-def upscale_and_crop(img):
+def upscale_and_crop(img, max_height, max_width):
     ''' Dimensions of largest image are 1040x1388, so we'll upscale to just beyond that size (1200x1400) and then crop. '''
-    max_height = 1200
-    max_width = 1400
     height, width = img.shape[:2]
     if img.ndim == 2:
         img = np.expand_dims(img, axis=-1)
@@ -58,27 +56,46 @@ def upscale_and_crop(img):
     del refl_img, img
     return new_img
 
+def split_image(img, n):
+    ''' Splits a square image n times along each axis'''
+    stride = img.shape[0]//n
+    img_list = []
+    for nx in range(n):
+        for ny in range(n):
+            img_slice = img[ny*stride:(ny+1)*stride, nx*stride:(nx+1)*stride, :]
+            img_list.append(img_slice)
+    return img_list
+
 def preprocess_data(save_path):
     ''' Loads the data, preprocesses it (by reflecting smaller images around their edges and then cropping to uniform size), then stacks them all into a single pair of (X,Y) arrays and saves as an .npy file so we don't have to do this every time. '''
     
-    # Iterate over images and apply upscale_and_crop
+    # Iterate over images and apply upscale_and_crop and split_image
     X_list = []
     Y_list = []
     n_imgs = len(list(save_path.iterdir()))
     for i, folder in enumerate(save_path.iterdir()):
-        print('Image {}/{}'.format(i+1, n_imgs))
-        img = np.array(Image.open(list(folder.glob('images/*.png'))[0]))
-        img = upscale_and_crop(img)
-        X_list.append(img.astype(np.uint8)) # Convert to 8-bit integer to save space!
-        mask = np.array(Image.open(folder/'stacked_img.png'))
-        mask = upscale_and_crop(mask)
-        Y_list.append(mask.astype(bool))
+        if folder.is_dir():
+            print('Image {}/{}'.format(i+1, n_imgs))
+            img = np.array(Image.open(list(folder.glob('images/*.png'))[0]))
+            img = upscale_and_crop(img, max_height=256*6, max_width=256*6)
+            img = split_image(img, n=6)
+            for im in img:
+                X_list.append(im.astype(np.uint8)) # Convert to 8-bit integer to save space!
+            mask = np.array(Image.open(folder/'stacked_img.png'))
+            mask = upscale_and_crop(mask, max_height=256*6, max_width=256*6)
+            mask = split_image(mask, 6)
+            for m in mask:
+                Y_list.append(m.astype(bool))
     X = np.stack(X_list, axis=0)
+    del X_list
     Y = np.stack(Y_list, axis=0)
+    del Y_list
     print('Saving X...')
     np.save(save_path/'X_train.npy', X)
+    del X
     print('Saving Y...')
     np.save(save_path/'Y_train.npy', Y)
+    del Y
 
 def plot_metrics(data_path, plot_path=None):
     '''
@@ -141,55 +158,88 @@ def plot_metrics(data_path, plot_path=None):
     plt.legend()
     plt.savefig(plot_path+'_loss.png')
     
-#    # Plot the error
-#    acc_dict = [('Training','_train_accuracy.log'), ('Validation','_val_accuracy.log')]
-#    plt.figure(num='Error')
-#    plt.clf()
-#    ax = plt.gca()
-#    for name, file in acc_dict:
-#        acc_list = []
-#        with open(data_path+file, 'r') as fo:
-#            for line in fo:
-#                acc_list.append(float(line))
-#        x = (log_freq*b_train/(m_train-b_val))*np.arange(len(acc_list))
-#        if name == 'Training':
-#            x_train = len(x)
-#        else:
-#            x = (x_train/len(x))*x
-#        plt.plot(x, 100*(1-np.array(acc_list)), 'o' , label=name, alpha=0.25)
-#    del acc_list
-#    plt.title('Average batch error')
-#    plt.xlabel('Epoch')
-#    plt.ylabel('Error (%)')
-#    ax.set_xscale('log')
-#    ax.set_yscale('log')
-#    plt.legend()
-#    plt.savefig(plot_path+'_error.png')
-#    
-#    # Plot the confidence
-#    conf_dict = [('Training','_train_confidence.log'), ('Validation','_val_confidence.log')]
-#    plt.figure(num='Uncertainty')
-#    plt.clf()
-#    ax = plt.gca()
-#    for name, file in conf_dict:
-#        conf_list = []
-#        with open(data_path+file, 'r') as fo:
-#            for line in fo:
-#                conf_list.append(float(line))
-#        x = (log_freq*b_train/(m_train-b_val))*np.arange(len(conf_list))
-#        if name == 'Training':
-#            x_train = len(x)
-#        else:
-#            x = (x_train/len(x))*x
-#        plt.plot(x, (1-np.array(conf_list)), 'o' , label=name, alpha=0.25)
-#    del conf_list
-#    plt.title('Average batch uncertainty')
-#    plt.xlabel('Epoch')
-#    plt.ylabel('Uncertainty')
-#    ax.set_xscale('log')
-#    ax.set_yscale('log')
-#    plt.legend()
-#    plt.savefig(plot_path+'_uncertainty.png')
+    # Plot the error
+    acc_dict = [('Training','_train_accuracy.log'), ('Validation','_val_accuracy.log')]
+    plt.figure(num='Error')
+    plt.clf()
+    ax = plt.gca()
+    for name, file in acc_dict:
+        acc_list = []
+        with open(data_path+file, 'r') as fo:
+            for line in fo:
+                acc_list.append(float(line))
+        x = (log_freq*b_train/(m_train-b_val))*np.arange(len(acc_list))
+        if name == 'Training':
+            x_train = len(x)
+        else:
+            x = (x_train/len(x))*x
+        plt.plot(x, 100*(1-np.array(acc_list)), 'o' , label=name, alpha=0.25)
+    del acc_list
+    plt.title('Average batch error')
+    plt.xlabel('Epoch')
+    plt.ylabel('Error (%)')
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    plt.legend()
+    plt.savefig(plot_path+'_error.png')
+    
+    # Plot the uncertainty
+    conf_dict = [('Training','_train_confidence.log'), ('Validation','_val_confidence.log')]
+    plt.figure(num='Uncertainty')
+    plt.clf()
+    ax = plt.gca()
+    for name, file in conf_dict:
+        conf_list = []
+        with open(data_path+file, 'r') as fo:
+            for line in fo:
+                conf_list.append(float(line))
+        x = (log_freq*b_train/(m_train-b_val))*np.arange(len(conf_list))
+        if name == 'Training':
+            x_train = len(x)
+        else:
+            x = (x_train/len(x))*x
+        plt.plot(x, (1-np.array(conf_list)), 'o' , label=name, alpha=0.25)
+    del conf_list
+    plt.title('Average batch uncertainty')
+    plt.xlabel('Epoch')
+    plt.ylabel('Uncertainty')
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    plt.legend()
+    plt.savefig(plot_path+'_uncertainty.png')
+    
+    # Plot the IOU
+    IOU_dict = [('Training','_train_IOU.log'), ('Validation','_val_IOU.log')]
+    plt.figure(num='IOU')
+    plt.clf()
+    ax = plt.gca()
+    for name, file in IOU_dict:
+        IOU_list = []
+        with open(data_path+file, 'r') as fo:
+            for line in fo:
+                IOU_list.append(float(line))
+        x = (log_freq*b_train/(m_train-b_val))*np.arange(len(IOU_list))
+        if name == 'Training':
+            x_train = len(x)
+        else:
+            x = (x_train/len(x))*x
+        plt.plot(x, IOU_list, 'o' , label=name, alpha=0.25)
+    del IOU_list
+    plt.title('Intersection over union (IOU)')
+    plt.xlabel('Epoch')
+    plt.ylabel('IOU')
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    plt.legend()
+    plt.savefig(plot_path+'_IOU.png')
+
+def var(X, mean):
+    ''' Memory-efficient calculation of variance (since numpy runs out of memory computing variance of dataset). '''
+    sum_of_squares = 0
+    for i in range(X.shape[0]):
+        sum_of_squares += np.sum(np.square(X[i]-mean))
+    return sum_of_squares/np.prod(X.shape)
+    
 
 if __name__ == '__main__':
     TRAIN_PATH = Path('../Datasets/NucleusSegmentation/stage1_train')
@@ -201,7 +251,9 @@ if __name__ == '__main__':
     
 #    stack_masks(TRAIN_PATH)
     
-    preprocess_data(TRAIN_PATH)
+#    preprocess_data(TRAIN_PATH)
+    
+    plot_metrics('./models/1/UNet1')
 
 
 
