@@ -1,5 +1,6 @@
 *.py[cod]
 Datsets/NucleusSegmentation/
+Datasets/MNIST
 __pycache__/
 *.meta
 *.data*
