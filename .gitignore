@@ -1,5 +1,7 @@
 *.py[cod]
 Datsets/NucleusSegmentation/
-__pycache_/
-NucleusSegmentation/models/*/UNet*.data*
-
+__pycache__/
+*.meta
+*.data*
+*.index
+checkpoint
