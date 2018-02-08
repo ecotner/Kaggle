@@ -357,7 +357,7 @@ class UNet(object):
                         raise Exception('Unknown learning rate decay function')
                     
                     # Iterate over batches:
-                    n_batches = math.ceil(m_train/batch_size)
+                    n_batches = int(math.ceil(m_train/batch_size))
                     for b in range(n_batches):
                         train_idx_i = b*batch_size
                         train_idx_f = min((b+1)*batch_size, m_train)

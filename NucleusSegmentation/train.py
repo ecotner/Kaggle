@@ -6,7 +6,7 @@ Created on Sat Feb  3 15:23:32 2018
 @author: ecotner
 """
 
-import tensorflow as tf
+#import tensorflow as tf
 import numpy as np
 from pathlib import Path
 from UNet import UNet
