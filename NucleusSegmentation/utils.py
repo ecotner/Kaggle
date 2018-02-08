@@ -35,10 +35,14 @@ def generate_boundary_layer(img):
     boundary_array = np.zeros(shape=img.shape, dtype=np.uint8)
     height, width = img.shape[:2]
     for y in range(height):
-        for x in range(width):
-            neighbor_pix = [img[y,max(0,x-1)], img[y,min(width-1,x+1)], img[max(0,y-1),x], img[min(height-1,y+1),x]]
-            if np.any(np.equal(neighbor_pix, 0)):
-                boundary_array[y,x] = 1
+        if not np.all(np.equal(img[y,:], 0)):
+            for x in range(width):
+                if img[y,x] == 0:
+                    pass
+                else:
+                    neighbor_pix = [img[y,max(0,x-1)], img[y,min(width-1,x+1)], img[max(0,y-1),x], img[min(height-1,y+1),x]]
+                    if np.any(np.equal(neighbor_pix, 0)):
+                        boundary_array[y,x] = 1
     return boundary_array
 
 def stack_masks_and_gen_boundary(save_path):
@@ -49,15 +53,16 @@ def stack_masks_and_gen_boundary(save_path):
         stacked_img = None
         print('Image {}/{}'.format(i, dir_len))
         # Stack images on each other (by simply adding)
-        for fo in masks_glob:
-            img = np.array(Image.open(fo))
-            boundary = generate_boundary_layer(img)
-            if stacked_img is None:
-                stacked_img = np.stack([img, boundary], axis=-1)
-            else:
-                stacked_img += np.stack([img, boundary], axis=-1)
+        if x.is_dir():
+            for fo in masks_glob:
+                img = np.array(Image.open(fo))
+                boundary = generate_boundary_layer(img)
+                if stacked_img is None:
+                    stacked_img = np.stack([img, boundary], axis=-1)
+                else:
+                    stacked_img += np.stack([img, boundary], axis=-1)
         # Save as both .npy file and .png
-        np.save(x/'stacked_and_interpolated_img.npy', stacked_img)
+            np.save(x/'stacked_and_interpolated_img.npy', stacked_img)
 #        stacked_img = Image.fromarray(stacked_img)
 #        stacked_img.save(x/'stacked_img.png')
 
@@ -327,7 +332,7 @@ def plot_metrics(data_path, plot_path=None):
     plt.xlabel('Epoch')
     plt.ylabel('IOU')
     ax.set_xscale('log')
-    ax.set_yscale('log')
+    ax.set_yscale('linear')
     plt.legend()
     plt.savefig(plot_path+'_IOU.png')
 
@@ -347,10 +352,10 @@ if __name__ == '__main__':
 #    print(a)
 #    print(b[:,:,0])
     
-    stack_masks_and_gen_boundary(TRAIN_PATH)
+#    stack_masks_and_gen_boundary(TRAIN_PATH)
     
 #    preprocess_data2(TRAIN_PATH)
     
-#    plot_metrics('./models/1/UNet1')
+    plot_metrics('./models/2/UNet2')
 
 

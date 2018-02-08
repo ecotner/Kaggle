@@ -135,10 +135,9 @@ class UNet(object):
             tf.add_to_collection('placeholders', self.labels)
             self.output = tf.identity(self.output, name='output')
             if loss_type == 'xentropy':
-                if self.output.shape.as_list()[-1] > 1:
-                    self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=self.output, labels=self.labels, dim=-1))
-                else:
-                    self.loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.output, labels=self.labels))
+                self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=self.output, labels=self.labels, dim=-1))
+            elif loss_type == 'sigmoid_xentropy':
+                self.loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.output, labels=self.labels))
             elif loss_type == 'L2':
                 self.loss = tf.reduce_mean(tf.square(self.output - self.labels))
             else:
@@ -241,11 +240,18 @@ class UNet(object):
             
             # Load data onto GPU, replace the input placeholder with an index into the data on the GPU (if applicable)
             if data_on_GPU:
+                print('Loading X_train to GPU...')
                 X_train_t = tf.constant(X_train, dtype=tf.uint8)
+                del X_train
+                print('Loading X_val to GPU...')
                 X_val_t = tf.constant(X_val, dtype=tf.uint8)
+                del X_val
+                print('Loading Y_train to GPU...')
                 Y_train_t = tf.constant(Y_train, dtype=tf.bool)
+                del Y_train
+                print('Loading Y_val to GPU...')
                 Y_val_t = tf.constant(Y_val, dtype=tf.bool)
-                del X_train, X_val, Y_train, Y_val
+                del Y_val
                 train_idx = tf.placeholder_with_default([0], shape=[None])
                 X_train_t = tf.gather(X_train_t, train_idx, axis=0)
                 Y_train_t = tf.gather(Y_train_t, train_idx, axis=0)
@@ -262,8 +268,8 @@ class UNet(object):
             ge.swap_ts([X, Y], [self.input, self.labels]) # Use X and Y from now on!
             
             # Add metrics
-            prob = tf.sigmoid(self.output)
-            Y_bool = tf.cast(Y, bool)
+            prob = tf.sigmoid(self.output[:,:,:,0])
+            Y_bool = tf.cast(Y[:,:,:,0], bool)
             is_over_thresh = (prob>0.5)
             is_equal = tf.equal(is_over_thresh, Y_bool)
             intersection = tf.reduce_sum(tf.cast(tf.logical_and(is_over_thresh, Y_bool), tf.float32))

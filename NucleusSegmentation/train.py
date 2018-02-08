@@ -12,7 +12,7 @@ from pathlib import Path
 from UNet import UNet
 import utils as u
 
-MODEL_PATH = Path('./models/1/UNet1')
+MODEL_PATH = Path('./models/2/UNet2')
 TRAIN_DATA_PATH = Path('../Datasets/NucleusSegmentation/stage1_train')
 #K_FOLDS = 5
 VAL_BATCH_SIZE = 16
@@ -60,8 +60,8 @@ model.convolution(f=3, s=1, n_out=64, activation='relu')
 model.stretch_transpose_convolution(f=2, s=2, n_out=32, activation='relu')
 model.convolution(f=3, s=1, n_out=32, activation='relu')
 model.convolution(f=3, s=1, n_out=32, activation='relu')
-model.convolution(f=1, s=1, n_out=1, activation='identity')
-model.add_loss(loss_type='xentropy', reg_type='L2')
+model.convolution(f=1, s=1, n_out=2, activation='identity')
+model.add_loss(loss_type='sigmoid_xentropy', reg_type='L2')
 model.add_optimizer(opt_type='adam')
 model.save_graph(MODEL_PATH)
 
