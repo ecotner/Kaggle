@@ -31,7 +31,7 @@ def gen_instance_maps(Y, class_threshold=0.5, boundary_threshold=0.1):
     height, width = y.shape
     for row in range(height):
         y[row,:] *= 1+np.arange(row*width,(row+1)*width, dtype=int)
-    y_ = np.ones((height, width), dtype=int)
+    y_ = np.zeros((height, width), dtype=int)
     # Repeat until convergence
     while np.any(np.not_equal(y, y_)):
         y_ = np.copy(y)
@@ -55,14 +55,15 @@ def gen_instance_maps(Y, class_threshold=0.5, boundary_threshold=0.1):
         for w in range(width):
             if (y[h,w] not in int_list) and (y[h,w] != 0):
                 int_list.append(y[h,w])
-    print("Found {} nuclei!".format(len(int_list)))
     # Iterate over unique integers
     mask_list = []
     for n in int_list:
         # Construct segmentation mask and add to list of masks
         mask = np.equal(y, n).astype(int)
-        mask_list.append(mask)
+        if np.sum(mask) > 5:
+            mask_list.append(mask)
     # Return list of masks
+    print("Found {} nuclei!".format(len(mask_list)))
     return mask_list
 
 def run_length_encoding(M, threshold):
@@ -86,6 +87,8 @@ def run_length_encoding(M, threshold):
     # Chop off trailing whitespace
     s = s[:-1]
     return s
+
+tic = time.time()
 
 # Load model graph
 model = UNet()
@@ -146,29 +149,5 @@ with model.G.as_default():
             df = DataFrame(submission, columns=['ImageId', 'EncodedPixels'])
             df.to_csv(str(MODEL_PATH)+'_test_predictions.csv', index=False)
 
-
-        
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+toc = time.time()
+print("Total time: {:.2f} minutes".format((toc-tic)/60))
