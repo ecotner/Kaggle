@@ -104,19 +104,42 @@ class UNet(object):
         with self.G.as_default():
             tensor_above = self.tensors_above.pop()
             output_shape = tf.concat([tf.shape(tensor_above)[:-1], [n_out]], axis=0)
-            self.transpose_convolution(f, s, n_out, output_shape=output_shape, activation=activation, padding=padding)
+            self.transpose_convolution(f, s, n_out, output_shape, activation, padding)
             self.output = tf.concat([self.output, tensor_above], axis=-1)
             self.current_level += +1
     
-    def inception_block(self, f_sizes, f_channels, s, use_shield=True):
-        pass
+    def inception_block(self, f_sizes, f_channels, s, activation='relu', padding='SAME', use_shield=True):
+        with self.G.as_default():
+            # Create 1x1 shield convolutions
+            input_tensor = self.output
+            intermediate_tensors = []
+            print(use_shield)
+            if use_shield:
+                for f, n_out in zip(f_sizes, f_channels):
+                    if f > 1: # Shield convolution for 1x1 is redundant
+                        self.convolution(1, 1, n_out//2, activation=activation, padding=padding)
+                        intermediate_tensors.append(self.output)
+                        self.output = input_tensor
+                    else:
+                        intermediate_tensors.append(input_tensor)
+            else:
+                intermediate_tensors = [input_tensor for f in f_sizes]
+            # Create fxf convolutions
+            output_tensors = []
+            for f, n_out, T in zip(f_sizes, f_channels, intermediate_tensors):
+                self.output = T
+                self.convolution(f, s, n_out, activation, padding)
+                output_tensors.append(self.output)
+            # Concatenate outputs together
+            self.output = tf.concat(output_tensors, axis=-1)
     
-    def squeeze_inception_block(self):
-        pass
-    
-    def stretch_inception_block(self):
-        pass
-    
+    def squeeze_inception_block(self, f_sizes, f_channels, s, activation='relu', padding='SAME', use_shield=True):
+        with self.G.as_default():
+            self.tensors_above.append(self.output)
+            # self.convolution(f_sizes[0], s, f_channels[0], activation, padding)
+            self.inception_block(f_sizes, f_channels, s, activation, padding, use_shield)
+            self.current_level += -1
+
     def dropout(self, group):
         with self.G.as_default():
             if group in self.keep_prob_dict:
@@ -494,39 +517,26 @@ class UNet(object):
 # Testing to make sure everything runs smoothly
 if __name__ == '__main__':
     un = UNet()
-    un.convolution(3,1,5, activation='relu')
+    un.inception_block([1,3,5], [5,5,5], 1)
     un.dropout(1)
-    un.squeeze_convolution(3,2,4)
-    un.convolution(3,1,7)
+    un.squeeze_inception_block([3,5], [5,5], 2)
+    un.inception_block([3,5], [5,5], 1)
     un.dropout(2)
-    un.squeeze_convolution(3,2,19)
-    un.convolution(3,1,31)
+    un.squeeze_inception_block([3,5], [5,5], 2)
+    un.inception_block([3,5], [5,5], 1)
     un.dropout(3)
-    un.stretch_transpose_convolution(3,2,40)
-    un.convolution(3,1,2)
-    un.stretch_transpose_convolution(3,2,15)
-    un.convolution(1,1,1, activation='identity')
-    un.add_loss('xentropy')
+    un.stretch_transpose_convolution(3,2,20)
+    un.inception_block([3,5], [5,5], 1)
+    un.stretch_transpose_convolution(3,2,10)
+    un.convolution(1, 1, 1, activation='identity')
+    un.convolution(1, 1, 1, activation='identity')
+    un.add_loss('sigmoid_xentropy')
     un.add_optimizer('adam')
     un.save_graph('./models/test/test')
     
-    X_train = np.random.randn(100,25,25,4)
-    X_val = np.random.randn(10,25,25,4)
-    Y_train = (np.random.randn(100,25,25,1)>0).astype(int)
-    Y_val = (np.random.randn(10,25,25,1)).astype(int)
+    X_train = np.random.randn(100,32,32,4)
+    X_val = np.random.randn(10,32,32,4)
+    Y_train = (np.random.randn(100,32,32,1)>0).astype(int)
+    Y_val = (np.random.randn(10,32,32,1)).astype(int)
     un.train(X_train, Y_train, X_val, Y_val, max_epochs=20, batch_size=10, learning_rate_init=1e-3, learning_rate_decay_type='inverse', data_on_GPU=False, keep_prob=[0.8, 0.8, 0.9], reset_parameters=True, early_stopping=True, val_checks_per_epoch=2, save_path=Path('./models/test/test'), seed=0)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
