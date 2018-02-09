@@ -225,27 +225,34 @@ class UNet(object):
             self.keep_prob_dict = {i:T for i, T in enumerate(tf.get_collection('keep_prob'))}
         return saver
     
-    def data_augmentation(self, X, Y):
+    def data_augmentation(self, X, Y, X_val, Y_val):
         ''' Performs data augmentation on input batches. Any deformations/translations on X need to also be applied to Y to keep consistency. '''
         input_dimensions = tf.cast(tf.shape(X), tf.int32)
         # Random crops
-        crop_height = tf.random_uniform(shape=[], minval=input_dimensions[1]//2, maxval=(1+input_dimensions[1]), dtype=tf.int32)
-        crop_width = tf.random_uniform(shape=[], minval=input_dimensions[2]//2, maxval=(1+input_dimensions[2]), dtype=tf.int32)
-        # crop_offset_x = tf.random_uniform(shape=[], minval=0, maxval=(input_dimensions[2]-crop_width), dtype=tf.int32)
-        # crop_offset_y = tf.random_uniform(shape=[], minval=0, maxval=(input_dimensions[1]-crop_height), dtype=tf.int32)
-        # X = X[:,crop_offset_y:(crop_offset_y+crop_height),crop_offset_x:(crop_offset_x+crop_width),:]
-        # Y = Y[:,crop_offset_y:(crop_offset_y+crop_height),crop_offset_x:(crop_offset_x+crop_width),:]
-        X = tf.stack([tf.random_crop(x, size=[crop_height,crop_width,input_dimensions[-1]], seed=0) for x in X], axis=0)
-        Y = tf.stack([tf.random_crop(y, size=[crop_height,crop_width,input_dimensions[-1]], seed=0) for y in Y], axis=0)
+        crop_height = tf.random_uniform(shape=[], minval=input_dimensions[1]//2, maxval=(input_dimensions[1]), dtype=tf.int32)
+        crop_width = tf.random_uniform(shape=[], minval=input_dimensions[2]//2, maxval=(input_dimensions[2]), dtype=tf.int32)
+        crop_offset_x = tf.random_uniform(shape=[], minval=0, maxval=(input_dimensions[2]-crop_width), dtype=tf.int32)
+        crop_offset_y = tf.random_uniform(shape=[], minval=0, maxval=(input_dimensions[1]-crop_height), dtype=tf.int32)
+        X = X[:,crop_offset_y:(crop_offset_y+crop_height),crop_offset_x:(crop_offset_x+crop_width),:]
+        Y = Y[:,crop_offset_y:(crop_offset_y+crop_height),crop_offset_x:(crop_offset_x+crop_width),:]
+        X_val = X_val[:,crop_offset_y:(crop_offset_y+crop_height),crop_offset_x:(crop_offset_x+crop_width),:]
+        Y_val = Y_val[:,crop_offset_y:(crop_offset_y+crop_height),crop_offset_x:(crop_offset_x+crop_width),:]
         # Random flips/rotations
-        n_rotations = tf.random_uniform(shape=[], minval=0, maxval=4, dtype=tf.int32, seed=0)
-        X = tf.stack([tf.image.rot90(tf.image.random_flip_up_down(tf.image.random_flip_left_right(x, seed=0), seed=0), n_rotations) for x in X], axis=0)
-        Y = tf.stack([tf.image.rot90(tf.image.random_flip_up_down(tf.image.random_flip_left_right(y, seed=0), seed=0), n_rotations) for y in Y], axis=0)
+        flip_dim_1 = tf.random_uniform(shape=[1], minval=0, maxval=2, dtype=tf.int32) # Flip axis 0/1 randomly
+        flip_dim_2 = tf.random_uniform(shape=[1], minval=1, maxval=3, dtype=tf.int32) # Flip axis 1/2 randomly
+        X = tf.reverse(tf.reverse(X, axis=flip_dim_1), axis=flip_dim_2)
+        Y = tf.reverse(tf.reverse(Y, axis=flip_dim_1), axis=flip_dim_2)
+        X_val = tf.reverse(tf.reverse(X_val, axis=flip_dim_1), axis=flip_dim_2)
+        Y_val = tf.reverse(tf.reverse(Y_val, axis=flip_dim_1), axis=flip_dim_2)
         # Color/contrast distortion
-        X = tf.concat([tf.stack([tf.image.random_hue(tf.image.random_contrast(x, seed=0), seed=0) for x in X[:,:,:,:3]], axis=0), X[:,:,:,3]], axis=3)
+        a = tf.random_uniform(shape=[1,1,1,3], minval=-1, maxval=1, dtype=tf.float32)
+        X_float = tf.cast(X, dtype=tf.float32)
+        X_val_float = tf.cast(X_val, dtype=tf.float32)
+        X = tf.concat([tf.cast(a*X_float[:,:,:,:3]**2 + (1-a)*X_float[:,:,:,:3], dtype=tf.uint8), tf.expand_dims(X[:,:,:,3], axis=3)], axis=3)
+        X_val = tf.concat([tf.cast(a*X_val_float[:,:,:,:3]**2 + (1-a)*X_val_float[:,:,:,:3], dtype=tf.uint8), tf.expand_dims(X_val[:,:,:,3], axis=3)], axis=3)
         # Noise injection
-        X += 0.1*256*tf.random_normal(shape=tf.shape(X), seed=0)
-        return X, Y
+        X += tf.cast(0.1*256*tf.random_normal(shape=tf.shape(X), seed=0), dtype=tf.uint8)
+        return X, Y, X_val, Y_val
     
     def train(self, X_train, Y_train, X_val, Y_val, max_epochs, batch_size, learning_rate_init, reg_param=0, learning_rate_decay_type='inverse', learning_rate_decay_parameter=10, keep_prob=[], early_stopping=True, save_path=Path('./UNet'), reset_parameters=False, val_checks_per_epoch=10, seed=None, data_on_GPU=True):
         '''
@@ -302,9 +309,9 @@ class UNet(object):
                 Y_val_t = tf.placeholder_with_default(np.zeros([0,height,width,n_classes], dtype=np.bool), shape=self.labels.shape, name='Y_val_input')
             # Insert data augmentation steps to graph
             train_or_val_idx = tf.placeholder(dtype=tf.int32, shape=[None])
-            X_train_aug, Y_train_aug = self.data_augmentation(X_train_t, Y_train_t)
-            X = (tf.cast(tf.gather(tf.concat([X_train_aug, X_val_t], axis=0), train_or_val_idx), tf.float32) - X_mean)/X_std
-            Y = tf.cast(tf.gather(tf.concat([Y_train_aug, Y_val_t], axis=0), train_or_val_idx), tf.float32)
+            X_train_aug, Y_train_aug, X_val_aug, Y_val_aug = self.data_augmentation(X_train_t, Y_train_t, X_val_t, Y_val_t)
+            X = (tf.cast(tf.gather(tf.concat([X_train_aug, X_val_aug], axis=0), train_or_val_idx), tf.float32) - X_mean)/X_std
+            Y = tf.cast(tf.gather(tf.concat([Y_train_aug, Y_val_aug], axis=0), train_or_val_idx), tf.float32)
             ge.swap_ts([X, Y], [self.input, self.labels]) # Use X and Y from now on!
             
             # Add metrics
@@ -555,5 +562,8 @@ if __name__ == '__main__':
     X_val = np.random.randn(10,32,32,4)
     Y_train = (np.random.randn(100,32,32,1)>0).astype(int)
     Y_val = (np.random.randn(10,32,32,1)).astype(int)
-    un.train(X_train, Y_train, X_val, Y_val, max_epochs=20, batch_size=10, learning_rate_init=1e-3, learning_rate_decay_type='inverse', data_on_GPU=False, keep_prob=[0.8, 0.8, 0.9], reset_parameters=True, early_stopping=True, val_checks_per_epoch=2, save_path=Path('./models/test/test'), seed=0)
+    tic = time.time()
+    un.train(X_train, Y_train, X_val, Y_val, max_epochs=100, batch_size=10, learning_rate_init=1e-3, learning_rate_decay_type='inverse', data_on_GPU=False, keep_prob=[0.8, 0.8, 0.9], reset_parameters=True, early_stopping=True, val_checks_per_epoch=2, save_path=Path('./models/test/test'), seed=0)
+    toc = time.time()
+    print(toc-tic)
 
