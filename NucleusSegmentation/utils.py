@@ -356,6 +356,6 @@ if __name__ == '__main__':
     
 #    preprocess_data2(TRAIN_PATH)
     
-    plot_metrics('./models/2/UNet2')
+    plot_metrics('./models/3/UNet3')
 
 

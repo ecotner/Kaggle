@@ -113,7 +113,6 @@ class UNet(object):
             # Create 1x1 shield convolutions
             input_tensor = self.output
             intermediate_tensors = []
-            print(use_shield)
             if use_shield:
                 for f, n_out in zip(f_sizes, f_channels):
                     if f > 1: # Shield convolution for 1x1 is redundant
@@ -227,7 +226,25 @@ class UNet(object):
         return saver
     
     def data_augmentation(self, X, Y):
-        ''' Performs data augmentation on input batches. Just returns identity for now. '''
+        ''' Performs data augmentation on input batches. Any deformations/translations on X need to also be applied to Y to keep consistency. '''
+        input_dimensions = tf.cast(tf.shape(X), tf.int32)
+        # Random crops
+        crop_height = tf.random_uniform(shape=[], minval=input_dimensions[1]//2, maxval=(1+input_dimensions[1]), dtype=tf.int32)
+        crop_width = tf.random_uniform(shape=[], minval=input_dimensions[2]//2, maxval=(1+input_dimensions[2]), dtype=tf.int32)
+        # crop_offset_x = tf.random_uniform(shape=[], minval=0, maxval=(input_dimensions[2]-crop_width), dtype=tf.int32)
+        # crop_offset_y = tf.random_uniform(shape=[], minval=0, maxval=(input_dimensions[1]-crop_height), dtype=tf.int32)
+        # X = X[:,crop_offset_y:(crop_offset_y+crop_height),crop_offset_x:(crop_offset_x+crop_width),:]
+        # Y = Y[:,crop_offset_y:(crop_offset_y+crop_height),crop_offset_x:(crop_offset_x+crop_width),:]
+        X = tf.stack([tf.random_crop(x, size=[crop_height,crop_width,input_dimensions[-1]], seed=0) for x in X], axis=0)
+        Y = tf.stack([tf.random_crop(y, size=[crop_height,crop_width,input_dimensions[-1]], seed=0) for y in Y], axis=0)
+        # Random flips/rotations
+        n_rotations = tf.random_uniform(shape=[], minval=0, maxval=4, dtype=tf.int32, seed=0)
+        X = tf.stack([tf.image.rot90(tf.image.random_flip_up_down(tf.image.random_flip_left_right(x, seed=0), seed=0), n_rotations) for x in X], axis=0)
+        Y = tf.stack([tf.image.rot90(tf.image.random_flip_up_down(tf.image.random_flip_left_right(y, seed=0), seed=0), n_rotations) for y in Y], axis=0)
+        # Color/contrast distortion
+        X = tf.concat([tf.stack([tf.image.random_hue(tf.image.random_contrast(x, seed=0), seed=0) for x in X[:,:,:,:3]], axis=0), X[:,:,:,3]], axis=3)
+        # Noise injection
+        X += 0.1*256*tf.random_normal(shape=tf.shape(X), seed=0)
         return X, Y
     
     def train(self, X_train, Y_train, X_val, Y_val, max_epochs, batch_size, learning_rate_init, reg_param=0, learning_rate_decay_type='inverse', learning_rate_decay_parameter=10, keep_prob=[], early_stopping=True, save_path=Path('./UNet'), reset_parameters=False, val_checks_per_epoch=10, seed=None, data_on_GPU=True):
