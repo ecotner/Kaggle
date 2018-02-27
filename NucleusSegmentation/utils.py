@@ -140,6 +140,27 @@ def split_image(img, n):
             img_list.append(img_slice)
     return img_list
 
+def gen_output_layer(masks):
+    """ Takes in an array of shape (m,h,w) containing m masks of nuclei for the same image, and outputs the ground truth layer. The ground truth layer is composed of 5 channels, which are 0) the probability of pixel being a nucleus or not, and 1-4) the number of pixels to the edge of the bounding box of the mask. """
+    m, h, w = masks.shape
+    new_mask = np.zeros([m,h,w,5], dtype=float)
+    grid = np.mgrid[0:h, 0:w]
+    for i in range(m):
+        mask = masks[i]
+        masked_grid = mask*grid
+        # Find positions of edges of bounding box
+        x_min = np.min(masked_grid[1])
+        x_max = np.max(masked_grid[1])
+        y_min = np.min(masked_grid[0])
+        y_max = np.max(masked_grid[0])
+        # Create new layers
+        new_mask[i,:,:,0] = mask # Whether the pixel is a nucleus or not
+        new_mask[i,:,:,1] = mask*(grid[1]-x_min) # Distances to edges of bounding box from pixel:
+        new_mask[i,:,:,2] = mask*(grid[1]-x_max)
+        new_mask[i,:,:,3] = mask*(grid[0]-y_min)
+        new_mask[i,:,:,4] = mask*(grid[0]-y_max)
+    return np.sum(new_mask, axis=0) # Return flattened array of all processed masks (assumes no overlap between masks)
+
 def preprocess_data(save_path):
     ''' Loads the data, preprocesses it (by reflecting smaller images around their edges and then cropping to uniform size), then stacks them all into a single pair of (X,Y) arrays and saves as an .npy file so we don't have to do this every time. '''
     
@@ -186,6 +207,40 @@ def preprocess_data2(save_path):
             for im in img:
                 X_list.append(im.astype(np.uint8)) # Convert to 8-bit integer to save space!
             mask = np.load(folder/'stacked_and_interpolated_img.npy')
+            mask = upscale_crop_and_split(mask, max_size=256)
+            for m in mask:
+                Y_list.append(m.astype(bool))
+    X = np.stack(X_list, axis=0)
+    del X_list
+    Y = np.stack(Y_list, axis=0)
+    del Y_list
+    print('Saving X...')
+    np.save(save_path/'X_train.npy', X)
+    del X
+    print('Saving Y...')
+    np.save(save_path/'Y_train.npy', Y)
+    del Y
+
+def preprocess_data3(save_path):
+    ''' Loads the data, preprocesses it (by reflecting smaller images around their edges and then cropping to uniform size), then stacks them all into a single pair of (X,Y) arrays and saves as an .npy file so we don't have to do this every time. Also generates an additional output layer which is a measure of the interpolation between the center and boundary of the nucleus.'''
+
+    # Iterate over images and apply upscale_and_crop and split_image
+    X_list = []
+    Y_list = []
+    n_imgs = len(list(save_path.iterdir()))
+    for i, folder in enumerate(save_path.iterdir()):
+        if folder.is_dir():
+            print('Image {}/{}'.format(i+1, n_imgs))
+            img = np.array(Image.open(list(folder.glob('images/*.png'))[0]))
+            imgs = upscale_crop_and_split(img, max_size=256)
+            for im in imgs:
+                X_list.append(im.astype(np.uint8)) # Convert to 8-bit integer to save space!
+            masks = folder.glob('masks/*.png')
+            mask_list = []
+            for mask in masks:
+                mask_list.append(np.array(Image.open(mask)))
+            masks = np.stack(mask_list, axis=0)
+            mask = gen_output_layer(masks)
             mask = upscale_crop_and_split(mask, max_size=256)
             for m in mask:
                 Y_list.append(m.astype(bool))
@@ -354,8 +409,8 @@ if __name__ == '__main__':
     
 #    stack_masks_and_gen_boundary(TRAIN_PATH)
     
-#    preprocess_data2(TRAIN_PATH)
+    preprocess_data3(TRAIN_PATH)
     
-    plot_metrics('./models/3/UNet3')
+#    plot_metrics('./models/3/UNet3')
 
 
