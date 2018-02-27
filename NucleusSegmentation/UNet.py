@@ -245,7 +245,7 @@ class UNet(object):
         X_val = tf.reverse(tf.reverse(X_val, axis=flip_dim_1), axis=flip_dim_2)
         Y_val = tf.reverse(tf.reverse(Y_val, axis=flip_dim_1), axis=flip_dim_2)
         # Color/contrast distortion
-        a = tf.random_uniform(shape=[1,1,1,3], minval=-1, maxval=1, dtype=tf.float32)
+        a = tf.random_uniform(shape=[1,1,1,3], minval=-0.5, maxval=0.5, dtype=tf.float32)
         X_float = tf.cast(X, dtype=tf.float32)
         X_val_float = tf.cast(X_val, dtype=tf.float32)
         X = tf.concat([tf.cast(a*X_float[:,:,:,:3]**2 + (1-a)*X_float[:,:,:,:3], dtype=tf.uint8), tf.expand_dims(X[:,:,:,3], axis=3)], axis=3)
@@ -477,7 +477,7 @@ class UNet(object):
                     else:
                         x = X_val[0]
                         feed_dict = {X_val_t:np.expand_dims(x, axis=0), Y_val_t:np.expand_dims(Y_val[0], axis=0), train_or_val_idx:range(1), self.reg_param:reg_param}
-                        y = sess.run(prob, feed_dict=feed_dict).squeeze()
+                        x, y = sess.run([X_val_aug, prob], feed_dict=feed_dict).squeeze()
                     plt.ioff()
                     plt.figure('Progress pic')
                     plt.clf()

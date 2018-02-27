@@ -21,10 +21,13 @@ from pandas import DataFrame
 import matplotlib.pyplot as plt
 import re
 
-MODEL_PATH = Path('./models/2/UNet2')
+MODEL_PATH = Path('./models/4/UNet4')
 TEST_DATA_PATH = Path('../Datasets/NucleusSegmentation/stage1_test')
+CLASS_THRESHOLD = 0.5
+BOUNDARY_THRESHOLD = 0.1
+MIN_NUCLEUS_PIX = 10
 
-def gen_instance_maps(Y, class_threshold=0.5, boundary_threshold=0.1):
+def gen_instance_maps(Y, class_threshold=0.5, boundary_threshold=0.1, min_nucleus_pix=10):
     """ Generates the masks for each instance of a nuclei from the segmentation map by assigning a unique nonzero integer to every positively identified pixel, then taking the max over adjacent pixels until convergence. SHOULD PROBABLY WRITE THIS IN C - IT'S PRETTY TIME-CONSUMING."""
     # Assign unique nonzero integer to each pixel over threshold
     y = (Y[:,:,0] > class_threshold).astype(int)
@@ -61,7 +64,7 @@ def gen_instance_maps(Y, class_threshold=0.5, boundary_threshold=0.1):
     for n in int_list:
         # Construct segmentation mask and add to list of masks
         mask = np.equal(y, n).astype(int)
-        if np.sum(mask) > 5:
+        if np.sum(mask) > min_nucleus_pix:
             mask_list.append(mask)
     # Return list of masks
     print("Found {} nuclei!".format(len(mask_list)))
@@ -100,7 +103,7 @@ def run_length_decoding(string, height, width):
     decoded_array = decoded_array.reshape([height, width], order='F')
     return decoded_array
 
-def predict(model_path, test_data_path):
+def predict(model_path, test_data_path, class_threshold, boundary_threshold, min_nucleus_pix):
     tic = time.time()
 
     # Load model graph
@@ -148,14 +151,14 @@ def predict(model_path, test_data_path):
                     fig, ax = plt.subplots(1,2)
                     [a.cla() for a in ax]
                     ax[0].imshow((x.squeeze()-np.min(x))/(np.max(x)-np.min(x)))
-                    ax[1].imshow(Y[:,:,0]>0.5)
-                    ax[1].imshow(Y[:,:,1]>0.1, alpha=0.35, cmap='Greys')
+                    ax[1].imshow(Y[:,:,0]>class_threshold)
+                    ax[1].imshow(Y[:,:,1]>boundary_threshold, alpha=0.35, cmap='Greys')
                     fig.savefig(str(MODEL_PATH)+'_prediction_ex.png')
 
                 # Format for submission
-                instance_maps = gen_instance_maps(Y, class_threshold=0.5, boundary_threshold=0.1)
+                instance_maps = gen_instance_maps(Y, class_threshold, boundary_threshold)
                 for mask in instance_maps:
-                    y = run_length_encoding(mask, threshold=0.5)
+                    y = run_length_encoding(mask, class_threshold)
                     submission.append((name, y))
 
                 # Make DataFrame and write to CSV
@@ -199,6 +202,6 @@ def visualize_prediction(model_path, test_data_path):
         # plt.pause(1e-9)
 
 if __name__ == "__main__":
-    # predict(MODEL_PATH, TEST_DATA_PATH)
-    visualize_prediction(MODEL_PATH, TEST_DATA_PATH)
+    predict(MODEL_PATH, TEST_DATA_PATH, CLASS_THRESHOLD, BOUNDARY_THRESHOLD, MIN_NUCLEUS_PIX)
+    # visualize_prediction(MODEL_PATH, TEST_DATA_PATH)
     # print(run_length_decoding('1 2 5 1 8 2', 3, 3))

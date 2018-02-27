@@ -410,7 +410,7 @@ if __name__ == '__main__':
 #    stack_masks_and_gen_boundary(TRAIN_PATH)
     
     preprocess_data3(TRAIN_PATH)
-    
-#    plot_metrics('./models/3/UNet3')
+
+    plot_metrics('./models/4/UNet4')
 
 
